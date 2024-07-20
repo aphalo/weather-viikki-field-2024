@@ -1,0 +1,98 @@
+---
+title: "Read data from Viikki field weather station"
+subtitle: "Minute-interval logging with Campbell Scientific CR6"
+author: "Pedro J. Aphalo"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(tidy = FALSE, echo = TRUE)
+```
+
+# Import and preprocessing of the data saved at 1 h interval
+
+```{r}
+library(readr)
+library(lubridate)
+library(photobiology)
+library(photobiologyInOut)
+library(dplyr)
+```
+
+We store the coordinates of the station to within < 1 m, plus any possible error in Google Maps image layer coordinates.
+
+```{r}
+viikki_bio3.geo <- data.frame(lon = 25.019212, lat = 60.226805, address = "BIO3, Viikki")
+locale_UTC <- locale(tz = "UTC")
+# locale_FI <- locale(tz = "Europe/Helsinki")
+```
+
+We read the hourinterval data for the whole summer.
+
+```{r}
+hour_raw.tb <- read_csi_dat(file = "data-latest/Viikki Tower_TableHour.dat", locale = locale_UTC)
+
+nrow(hour_raw.tb)
+ncol(hour_raw.tb)
+hour_raw.tb$TIMESTAMP[1]
+hour_raw.tb$TIMESTAMP[nrow(hour_raw.tb)]
+```
+
+```{r}
+colnames(hour_raw.tb)
+```
+
+```{r}
+cat(comment(hour_raw.tb))
+```
+
+Sometimes after changes in the logger program data already downloaded has been
+appended to files, leading to duplicate rows.
+
+```{r}
+rle.check <- rle(sort(as.numeric(hour_raw.tb$TIMESTAMP)))
+duplicates <- sum(rle.check$lengths > 1)
+if (duplicates > 0L) {
+  message("Found ", duplicates, " duplicated rows in data.")
+  hour_raw.tb <- distinct(hour_raw.tb, TIMESTAMP, .keep_all = TRUE)
+}
+```
+
+This code is for 2021 -> when UTC + 2h was always set in logger
+
+```{r}
+hour_raw.tb[["TIMESTAMP"]][1]
+hour_raw.tb[["TIMESTAMP"]][nrow(hour_raw.tb)]
+tz(hour_raw.tb[["TIMESTAMP"]][1])
+hour_raw.tb[["TIMESTAMP"]] <-  hour_raw.tb[["TIMESTAMP"]] - hours(2) # UTC + 2 -> UTC 
+hour_raw.tb[["TIMESTAMP"]][1]
+hour_raw.tb[["TIMESTAMP"]][nrow(hour_raw.tb)]
+tz(hour_raw.tb[["TIMESTAMP"]][1])
+```
+
+
+```{r}
+hour_raw.tb %>%
+  mutate(year = year(TIMESTAMP),
+         month_of_year = month(TIMESTAMP),
+         month_name = factor(month_of_year, levels = 12:1, labels = rev(month.name)),
+         week_of_year = week(TIMESTAMP),
+         day_of_year = yday(TIMESTAMP),
+         time_of_day = as_tod(TIMESTAMP)) -> hour.tb
+nrow(hour.tb)
+```
+
+```{r}
+obj.name <- paste("hour_", year(hour_raw.tb$TIMESTAMP[1]),
+                  "_", month(hour_raw.tb$TIMESTAMP[1]), ".tb", sep = "")
+assign(obj.name, hour.tb)
+
+save(list = obj.name, file = paste("data-rda/", obj.name, ".rda", sep = ""))
+```
+
+
+```{r}
+head(hour.tb)
+tail(hour.tb)
+```

@@ -1,0 +1,393 @@
+---
+title: "Data from radiation and weather in Viikki field"
+subtitle: "Daily means, 2024-"
+author: "Pedro J. Aphalo"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# library(tint)
+# invalidate cache when the package version changes
+knitr::opts_chunk$set(tidy = FALSE) # , cache.extra = packageVersion('tint')
+options(htmltools.dir.version = FALSE)
+```
+
+When new data is available, first run 'read-data.Rmd', possibly after clearing the 'knitr' cache.
+
+```{r}
+library(tidyverse)
+library(ggridges)
+library(lubridate)
+
+theme_set(theme_bw())
+
+options(warnPartialMatchAttr = FALSE,
+        warnPartialMatchDollar = FALSE,
+        warnPartialMatchArgs = FALSE)
+```
+
+
+```{r}
+rm(list = ls(pattern = "*"))
+load("data-rda/day_2024_latest.tb.rda")
+range(day_2024_latest.tb$time)
+colnames(day_2024_latest.tb)
+print(object.size(day_2024_latest.tb), standard = "SI", units = "MB", digits = 2)
+```
+
+## Important note
+
+ggplot stores the whole data frame in the ggplot object. Here we have 203 variables and will in the future possibly have thousands of observations. I have changed the code to first select the columns to be used before building the plot. This reduces the size of plots from 72 MB to 2-3 MB and also makes plotting a lot faster.
+
+# Time-series plots
+
+## Air temperature
+
+```{r}
+day_2024_latest.tb |>
+  select(time, air_temp_C_mean, air_temp_C_min, air_temp_C_max) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_line(aes(y = air_temp_C_mean), linewidth = 1) +
+  geom_line(aes(y = air_temp_C_min), colour = "blue") +
+  geom_line(aes(y = air_temp_C_max), colour = "red") +
+  labs(y = "Air temperature at 2 m (C)", x = "Time") -> 
+global_radiation.fig
+global_radiation.fig
+```
+
+## Water vapour pressure
+
+```{r}
+day_2024_latest.tb |>
+  select(time, air_vp_mean, air_vp_min, air_vp_max) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_line(aes(y = air_vp_mean), linewidth = 1) +
+  geom_line(aes(y = air_vp_min), colour = "blue") +
+  geom_line(aes(y = air_vp_max), colour = "red") +
+  labs(y = expression("Water vapour pressure "*(Pa)), x = "Time") -> 
+global_radiation.fig
+global_radiation.fig
+```
+
+## Global radiation
+
+Daily total, whole-day average in joule per second, converted to MJ per day.
+
+```{r}
+day_2024_latest.tb |>
+  select(time, global_watt_mean) |>
+  na.omit() |>
+  ggplot(aes(x = time, y = global_watt_mean * 60 * 60 * 24 * 1e-6)) +
+  geom_line() +
+  expand_limits(y = 0) +
+  labs(y = expression("Global radiation "*(MJ~m^{-2}~d^{-1})), x = "Time") -> 
+global_radiation.fig
+global_radiation.fig
+```
+
+The daily maximum, minimum and average global irradiance, based on 0.5 s means obtained from measurements once every 0.05 s. In practice, as fast as the sensor responds.
+
+```{r}
+day_2024_latest.tb |>
+  select(time, global_watt_mean, global_watt_min, global_watt_max) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_line(aes(y = global_watt_mean), linewidth = 1) +
+  geom_line(aes(y = global_watt_min), colour = "blue") +
+  geom_line(aes(y = global_watt_max), colour = "red") +
+  labs(y = expression("Global radiation "*(W~m^{-2})), x = "Time") -> 
+global_radiation.fig
+global_radiation.fig
+```
+
+## PAR 
+
+The daily maximum, minimum and average PAR, based on 0.5 s means obtained from measurements once every 0.05 s. This sensor has a time constant of less than 1 ms, thus, not limiting the measured dynamics.
+
+```{r}
+day_2024_latest.tb |>
+  select(time, PAR_umol_mean, PAR_umol_min, PAR_umol_max) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_line(aes(y = PAR_umol_mean), linewidth = 1) +
+  geom_line(aes(y = PAR_umol_min), colour = "blue") +
+  geom_line(aes(y = PAR_umol_max), colour = "red") +
+  labs(y = expression("PAR "*(mu*mol~m^{-2}~s^{-1})), x = "Time") -> 
+PAR.fig
+PAR.fig
+```
+
+```{r}
+day_2024_latest.tb |>
+  select(time, PAR_umol_mean, PAR_umol_min, PAR_umol_max) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_line(aes(y = PAR_umol_mean * 60 * 60 * 24 * 1e-6), linewidth = 1) +
+  labs(y = expression("PAR "*(mol~m^{-2}~d^{-1})), x = "Time") -> 
+PAR.fig
+PAR.fig
+```
+
+## UV-B
+
+```{r}
+day_2024_latest.tb |>
+  select(time, UVB_umol_mean, UVB_umol_min, UVB_umol_max) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_line(aes(y = UVB_umol_mean)) +
+  geom_line(aes(y = UVB_umol_min), colour = "blue") +
+  geom_line(aes(y = UVB_umol_max), colour = "red") +
+  labs(y = expression("UV-B "*(mu*mol~m^{-2}~s^{-1})), x = "Time") -> 
+UVB.fig
+UVB.fig
+```
+
+```{r}
+day_2024_latest.tb |>
+  select(time, UVB_umol_mean, UVB_umol_min, UVB_umol_max) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_line(aes(y = UVB_umol_mean * 60 * 60 * 24 * 1e-3)) +
+  labs(y = expression("UV-B "*(m*mol~m^{-2}~d^{-1})), x = "Time") -> 
+UVB.fig
+UVB.fig
+```
+
+## UV-A2
+
+```{r}
+day_2024_latest.tb |>
+  select(time, UVA2_umol_mean, UVA2_umol_min, UVA2_umol_max) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_line(aes(y = UVA2_umol_mean)) +
+  geom_line(aes(y = UVA2_umol_min), colour = "blue") +
+  geom_line(aes(y = UVA2_umol_max), colour = "red") +
+  labs(y = expression("UV-A2 "*(mu*mol~m^{-2}~s^{-1})), x = "Time") -> 
+UVA2.fig
+UVA2.fig
+```
+
+```{r}
+day_2024_latest.tb |>
+  select(time, UVA2_umol_mean, UVA2_umol_min, UVA2_umol_max) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_line(aes(y = UVA2_umol_mean * 60 * 60 * 24 * 1e-6)) +
+  labs(y = expression("UV-A2 "*(mol~m^{-2}~d^{-1})), x = "Time") -> 
+UVA2.fig
+UVA2.fig
+```
+
+## UV-A1
+
+```{r}
+day_2024_latest.tb |>
+  select(time, UVA1_umol_mean, UVA1_umol_min, UVA1_umol_max) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_line(aes(y = UVA1_umol_mean)) +
+  geom_line(aes(y = UVA1_umol_min), colour = "blue") +
+  geom_line(aes(y = UVA1_umol_max), colour = "red") +
+  labs(y = expression("UV-A1 "*(mu*mol~m^{-2}~s^{-1})), x = "Time") -> 
+UVA1.fig
+UVA1.fig
+```
+
+```{r}
+day_2024_latest.tb |>
+  select(time, UVA1_umol_mean, UVA1_umol_min, UVA1_umol_max) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_line(aes(y = UVA1_umol_mean * 60 * 60 * 24 * 1e-6)) +
+  labs(y = expression("UV-A1 "*(mol~m^{-2}~d^{-1})), x = "Time") -> 
+UVA1.fig
+UVA1.fig
+```
+
+## Rainfall
+
+```{r}
+day_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  select(time, rain_mm_day) |>
+  ggplot(aes(time, rain_mm_day)) +
+  geom_col(fill = "blue") +
+  labs(y = expression("Rain "*(mm~d^{-1})), x = "Time") -> 
+Blue.fig
+Blue.fig
+```
+
+## Reference evapotranspiration
+
+These three variations are computed with different parametrizations of the Pennman-Monteith equation.
+
+The one originally adopted by FAO around 1956.
+
+```{r}
+day_2024_latest.tb |>
+  select(time, ET_ref_FAO56_mean, ET_ref_FAO56_min, ET_ref_FAO56_max) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_hline(yintercept = 0, colour = "gray50", linewidth = 0.3) +
+  geom_line(aes(y = ET_ref_FAO56_min * 24), colour = "blue") +
+  geom_line(aes(y = ET_ref_FAO56_max * 24), colour = "red") +
+  geom_line(aes(y = ET_ref_FAO56_mean * 24)) +
+  labs(y = expression("Reference ET, FAO56 "*(mm~d^{-1})), x = "Time") -> 
+ET_ref_FAO56.fig
+ET_ref_FAO56.fig
+```
+
+A revised version, still assuming a short grass sward.
+
+```{r}
+day_2024_latest.tb |>
+  select(time, ET_ref_short_mean, ET_ref_short_min, ET_ref_short_max) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_hline(yintercept = 0, colour = "gray50", linewidth = 0.3) +
+  geom_line(aes(y = ET_ref_short_min * 24), colour = "blue") +
+  geom_line(aes(y = ET_ref_short_max * 24), colour = "red") +
+  geom_line(aes(y = ET_ref_short_mean * 24)) +
+  labs(y = expression("Reference ET, short grass "*(mm~d^{-1})), x = "Time") -> 
+ET_ref_short.fig
+ET_ref_short.fig
+```
+
+A parametrization for a taller crop, alfalfa of about 1 m.
+
+```{r}
+day_2024_latest.tb |>
+  select(time, ET_ref_tall_mean, ET_ref_tall_min, ET_ref_tall_max) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_hline(yintercept = 0, colour = "gray50", linewidth = 0.3) +
+  geom_line(aes(y = ET_ref_tall_min * 24), colour = "blue") +
+  geom_line(aes(y = ET_ref_tall_max * 24), colour = "red") +
+  geom_line(aes(y = ET_ref_tall_mean * 24)) +
+  labs(y = expression("Reference ET, tall grass "*(mm~d^{-1})), x = "Time") -> 
+ET_ref_tall.fig
+ET_ref_tall.fig
+```
+
+## Relative atmosphere transmittance
+
+This value is based on an estimate of the irradiance at the top of the atmosphere based on astronomical calculations.
+
+```{r}
+day_2024_latest.tb |>
+  select(time, R_rel_mean, R_rel_min, R_rel_max) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_hline(yintercept = 0, colour = "gray50", linewidth = 0.3) +
+  geom_line(aes(y = R_rel_min), colour = "blue") +
+  geom_line(aes(y = R_rel_max), colour = "red") +
+  geom_line(aes(y = R_rel_mean)) +
+  labs(y = "Relative atmosphere transmittance (/1)", x = "Time") -> 
+R_rel.fig
+R_rel.fig
+```
+
+## Soil water fluxes, rainfall and reference evapotranspiration
+
+This is computed from the profile data down to 55 cm depth. Positive values indicate soil-water recharge and negative values water loss.
+
+```{r}
+day_2024_latest.tb |>
+  select(time, water_mm_0to55cm_delta, rain_mm_day, ET_ref_FAO56_mean, n_minutes) |>
+  filter(n_minutes > 1400) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_hline(yintercept = 0, colour = "gray50", linewidth = 0.3) +
+  geom_line(aes(y = water_mm_0to55cm_delta), colour = "black") +
+  geom_line(aes(y = rain_mm_day), colour = "blue") +
+  geom_line(aes(y = -ET_ref_FAO56_mean * 24), colour = "orange") +
+  geom_point(aes(y = water_mm_0to55cm_delta), colour = "black") +
+  geom_point(aes(y = rain_mm_day), colour = "blue") +
+  geom_point(aes(y = -ET_ref_FAO56_mean * 24), colour = "orange") +
+  labs(y = expression("Water flux "*(mm~d^{-1})), x = "Time",
+       caption = "Blue = rain, Black = change in soil water content, Orange = reference ET.") -> 
+soil_water_delta.fig
+soil_water_delta.fig
+```
+
+## Soil temperature at different depths
+
+```{r}
+day_2024_latest.tb |>
+  select(time, T_5cm_mean, T_10cm_mean, T_20cm_mean, T_30cm_mean, T_40cm_mean, T_50cm_mean) |>
+  na.omit() |>
+  ggplot() +
+  geom_line(aes(y = T_5cm_mean, x = time), color = "red") +
+  geom_line(aes(y = T_10cm_mean, x = time)) +
+  geom_line(aes(y = T_20cm_mean, x = time), color = "darkgreen") +
+  geom_line(aes(y = T_30cm_mean, x = time), color = "darkblue") +
+  geom_line(aes(y = T_40cm_mean, x = time), color = "orange") +
+  geom_line(aes(y = T_50cm_mean, x = time), color = "darkred") +
+#  scale_x_continuous(breaks = c(0, 0.1, 0.25, 0.5, 0.75, 1)) +
+  labs(y = "Soil temperature at 5 to 50 cm depth (C)", x = "Time") -> 
+soil_t_50cm.fig
+soil_t_50cm.fig
+```
+
+## Soil water content at different depths
+
+```{r}
+day_2024_latest.tb |>
+  select(time, VWC_5cm_mean, VWC_10cm_mean, VWC_20cm_mean, VWC_30cm_mean, VWC_40cm_mean, VWC_50cm_mean) |>
+  na.omit() |>
+  ggplot() +
+  geom_line(aes(y = VWC_5cm_mean, x = time), color = "red") +
+  geom_line(aes(y = VWC_10cm_mean, x = time)) +
+  geom_line(aes(y = VWC_20cm_mean, x = time), color = "darkgreen") +
+  geom_line(aes(y = VWC_30cm_mean, x = time), color = "darkblue") +
+  geom_line(aes(y = VWC_40cm_mean, x = time), color = "orange") +
+  geom_line(aes(y = VWC_50cm_mean, x = time), color = "darkred") +
+  labs(y = expression("Soil water v/v "*(m^{3}~m^{-3})), x = "Time") +
+  expand_limits(y = 0) -> 
+soil_VWC.fig
+soil_VWC.fig
+```
+
+## Soil electric conductivity
+
+```{r}
+day_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  select(time, BulkEC_10cm_mean, BulkEC_20cm_mean, BulkEC_30cm_mean, BulkEC_40cm_mean, BulkEC_50cm_mean) |>
+  na.omit() |>
+  ggplot() +
+  geom_line(aes(y = BulkEC_10cm_mean, x = time)) +
+  geom_line(aes(y = BulkEC_20cm_mean, x = time), color = "darkgreen") +
+  geom_line(aes(y = BulkEC_30cm_mean, x = time), color = "darkblue") +
+  geom_line(aes(y = BulkEC_40cm_mean, x = time), color = "orange") +
+  geom_line(aes(y = BulkEC_50cm_mean, x = time), color = "darkred") +
+  labs(y = "Bulk EC (dS/m)", x = "Time") ->
+soil_BulkEC.fig
+soil_BulkEC.fig
+```
+
+## Dielectric Permittivity
+
+These are the "raw" values from the TDR, without interpretation as soil properties.
+
+```{r}
+day_2024_latest.tb |>
+  select(time, Ka_5cm_mean, Ka_10cm_mean, Ka_20cm_mean, Ka_30cm_mean, Ka_40cm_mean, Ka_50cm_mean) |>
+  na.omit() |>
+  ggplot() +
+  geom_line(aes(y = Ka_5cm_mean, x = time), color = "red") +
+  geom_line(aes(y = Ka_10cm_mean, x = time)) +
+  geom_line(aes(y = Ka_20cm_mean, x = time), color = "darkgreen") +
+  geom_line(aes(y = Ka_30cm_mean, x = time), color = "darkblue") +
+  geom_line(aes(y = Ka_40cm_mean, x = time), color = "orange") +
+  geom_line(aes(y = Ka_50cm_mean, x = time), color = "darkred") +
+  labs(y = "Relative Dielectric Permittivity (1..80)", x = "Time") +
+  expand_limits(y = 0) -> 
+soil_Ka.fig
+soil_Ka.fig
+```

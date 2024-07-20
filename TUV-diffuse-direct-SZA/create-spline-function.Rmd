@@ -1,0 +1,111 @@
+---
+title: "Diffuse fraction under clear sky"
+subtitle: "Data simulated with the TUV model"
+author: "Pedro J. Aphalo"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list = ls(pattern = "*"))
+knitr::opts_chunk$set(tidy = FALSE, cache = FALSE)
+```
+
+When new data is available, first run 'read-data.Rmd', possibly after clearing the 'knitr' cache.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(photobiology)
+library(photobiologyInOut)
+library(photobiologyWavebands)
+
+theme_set(theme_bw())
+
+options(warnPartialMatchAttr = FALSE,
+        warnPartialMatchDollar = FALSE,
+        warnPartialMatchArgs = FALSE)
+```
+
+## Diffuse PAR fraction from TUV
+
+Read Quick TUV output files for different solar zenith angles and split the
+components of total irradiance into separate spectra. We select files with
+`low` in their names, with low levels of aerosols that seem match better the
+data as can be seen in the next section. One can change `"low"` by `"4str"`
+for the default aerosols from Quick TUV.
+
+```{r, message = FALSE, warning = FALSE}
+
+files <- list.files(pattern = "tuv", full.names = TRUE)
+
+SZA.mspct <- source_mspct()
+
+for (f in files) {
+  name <- gsub("tuv-default-|-4str.htm|-low.htm", "", basename(f))
+  print(name)
+  SZA.mspct[[name]] <- read_qtuv_txt(f, ozone.du = 300)
+}
+
+SZA_tot.mspct <- source_mspct()
+SZA_diff.mspct <- source_mspct()
+SZA_dir.mspct <- source_mspct()
+for (n in names(SZA.mspct)) {
+  SZA_tot.mspct[[n]] <-
+    SZA.mspct[[n]][ , c("w.length", "s.e.irrad")]
+  SZA_diff.mspct[[n]] <-
+    with(SZA.mspct[[n]], source_spct(w.length = w.length, s.e.irrad = s.e.irrad.diff.down))
+  SZA_dir.mspct[[n]] <-
+    with(SZA.mspct[[n]], source_spct(w.length = w.length, s.e.irrad = s.e.irrad.dir))
+}
+```
+
+Compute PAR irradiances and the diffuse fraction for different SZAs.
+
+```{r}
+q_irrad(SZA.mspct, PAR(), scale.factor = 1e6)
+PAR_tot.tb <- q_irrad(SZA_tot.mspct, PAR(), scale.factor = 1e6)
+PAR_dir.tb <- q_irrad(SZA_dir.mspct, PAR(), scale.factor = 1e6)
+PAR_diff.tb <- q_irrad(SZA_diff.mspct, PAR(), scale.factor = 1e6)
+
+PAR.tb <-
+  data.frame(
+    SZA = as.numeric(gsub("tuv-|\\.htm", "", PAR_tot.tb$spct.idx)),
+    SEA = 90 - as.numeric(gsub("tuv-|\\.htm", "", PAR_tot.tb$spct.idx)),
+    total = PAR_tot.tb$`Q_PAR[`,
+    direct = PAR_dir.tb$`Q_PAR[`,
+    diffuse = PAR_diff.tb$`Q_PAR[`,
+    diff_fraction = PAR_diff.tb$`Q_PAR[` / PAR_tot.tb$`Q_PAR[`
+  )
+```
+
+Plot to check that data look good. We use solar elevation angle for the plot.
+
+```{r}
+ggplot(PAR.tb, aes(SEA, diff_fraction)) +
+  geom_line() +
+  expand_limits(y = 0)
+```
+```{r}
+# We fit a spline obtaining a function that can be used to obtain by interpolation
+# estimates of the diffuse PAR fraction for any solar elevation covered by the
+# simulations.
+
+clear_sky_PAR_diff_frac.fun <- splinefun(PAR.tb$SEA, PAR.tb$diff_fraction)
+```
+
+```{r}
+ggplot(PAR.tb, aes(SEA, diff_fraction)) +
+  stat_function(fun = clear_sky_PAR_diff_frac.fun, xlim = c(-10, 90), colour = "black") +
+  geom_point(na.rm = TRUE, colour =  "orange") +
+  scale_x_continuous(name = "Solar elevation angle (degrees)",
+                     breaks = c(-10, 0, 15, 30, 45, 60, 75, 90)) +
+  labs(y = expression("Diffuse fraction, "*Q[s] / Q[t])) +
+  expand_limits(y = 0)
+
+```
+```{r}
+saveRDS(clear_sky_PAR_diff_frac.fun, file = "spline-fun.RDS")
+```
+

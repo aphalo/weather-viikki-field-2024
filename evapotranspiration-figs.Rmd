@@ -1,0 +1,2017 @@
+---
+title: "Reference Evapotranspiration"
+subtitle: "Viikki, Helsinki, Finland"
+author: "P. J. Aphalo and V. O. Sadras"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# PDF figures saved to "figures-pdf/ET-figs/"
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+```{r, message = FALSE}
+library(tibble)
+library(ggpmisc)
+library(gginnards)
+library(dplyr)
+library(caTools)
+library(nlme)
+library(quantreg)
+library(ggdensity)
+```
+
+```{r}
+kde_probs <- c(0.999, 0.99, 0.95, 0.8, 0.5)
+fit_caption <- "Line and equation: OLS regression."
+```
+
+```{r}
+load("data-rda/minute_2015_latest.tb.rda")
+```
+
+Mean data at 1 min intervals for the time range:
+
+```{r}
+range(subset(minute_2015_latest.tb, !is.na(UVB_umol))[["time"]])
+```
+Reference ET computed with FAO56 formulation of the Penman-Montieth equation,
+as modified by ASCE (ASCE-PM short canopy). The computations were done minute
+by minute for the whole period and for each day.
+
+I still need to implement the correction for cloudiness in the long wave
+radiation balance and to change the albedo when there is snow in the winter.
+
+```{r}
+minute_2015_latest.tb %>%
+  filter(is.finite(UVB_umol)) %>%
+  mutate(hour_of_day = round(solar_time, digits = 0),
+         month_name = factor(month.name[month_of_year],
+                             levels = month.name)) %>%
+  group_by(calendar_year, month_of_year, month_name, day_of_year) %>%
+  summarize(n = n(),
+            UVB_umol_min_day = min(UVB_umol, na.rm = TRUE),
+            UVA_umol_min_day = min(UVA_umol, na.rm = TRUE),
+            UVA1_umol_min_day = min(UVA1_umol, na.rm = TRUE),
+            UVA2_umol_min_day = min(UVA2_umol, na.rm = TRUE),
+            blue_umol_min_day = min(blue_umol, na.rm = TRUE),
+            red_umol_min_day = min(red_umol, na.rm = TRUE),
+            far_red_umol_min_day = min(far_red_umol, na.rm = TRUE),
+            PAR_umol_min_day = min(PAR_umol, na.rm = TRUE),
+            global_watt_min_day = min(global_watt, na.rm = TRUE),
+            UVB_umol_mean_day = mean(UVB_umol, na.rm = TRUE),
+            UVA_umol_mean_day = mean(UVA_umol, na.rm = TRUE),
+            UVA1_umol_mean_day = mean(UVA1_umol, na.rm = TRUE),
+            UVA2_umol_mean_day = mean(UVA2_umol, na.rm = TRUE),
+            blue_umol_mean_day = mean(blue_umol, na.rm = TRUE),
+            red_umol_mean_day = mean(red_umol, na.rm = TRUE),
+            far_red_umol_mean_day = mean(far_red_umol, na.rm = TRUE),
+            PAR_umol_mean_day = mean(PAR_umol, na.rm = TRUE),
+            global_watt_mean_day = mean(global_watt, na.rm = TRUE),
+            UVB_mmol_day = (UVB_umol_mean_day - UVB_umol_min_day) * 1e-3 * 86.4e3,
+            UVA_mol_day = (UVA_umol_mean_day - UVA_umol_min_day) * 1e-6 * 86.4e3,
+            UVA1_mol_day = (UVA1_umol_mean_day - UVA1_umol_min_day) * 1e-6 * 86.4e3,
+            UVA2_mol_day = (UVA2_umol_mean_day - UVA2_umol_min_day) * 1e-6 * 86.4e3,
+            blue_mol_day = (blue_umol_mean_day - blue_umol_min_day) * 1e-6 * 86.4e3,
+            red_mol_day = (red_umol_mean_day - red_umol_min_day) * 1e-6 * 86.4e3,
+            far_red_mol_day = (far_red_umol_mean_day - far_red_umol_min_day) * 1e-6 * 86.4e3,
+            PAR_mol_day = PAR_umol_mean_day * 1e-6 * 86.4e3,
+            global_Mj_day = global_watt_mean_day * 1e-6 * 86.4e3,
+            ET_ref_short_day = mean(ET_ref_short, na.rm = TRUE) * 24,
+            ET_ref_tall_day = mean(ET_ref_tall, na.rm = TRUE) * 24,
+            ET_ref_FAO56_day = mean(ET_ref_FAO56, na.rm = TRUE) * 24,
+            has_UV = !is.na(UVB_mmol_day),
+            .groups = "drop") %>%
+  ungroup() %>%
+  filter(month_of_year > 3 & month_of_year < 10) %>%
+  filter(n > 1410 & n < 1450) -> day.tb
+nrow(day.tb)
+```
+
+```{r}
+minute_2015_latest.tb %>%
+  filter(is.finite(UVB_umol)) %>%
+  mutate(hour_of_day = round(solar_time, digits = 0),
+         month_name = factor(month.name[month_of_year],
+                             levels = month.name)) %>%
+  group_by(calendar_year, month_of_year, month_name, hour_of_day) %>%
+  summarize(n = n(),
+            UVB_umol = mean(UVB_umol, na.rm = TRUE),
+            UVA_umol = mean(UVA_umol, na.rm = TRUE),
+            UVA1_umol = mean(UVA1_umol, na.rm = TRUE),
+            UVA2_umol = mean(UVA2_umol, na.rm = TRUE),
+            blue_umol = mean(blue_umol, na.rm = TRUE),
+            red_umol = mean(red_umol, na.rm = TRUE),
+            far_red_umol = mean(far_red_umol, na.rm = TRUE),
+            PAR_umol = mean(PAR_umol, na.rm = TRUE),
+            PAR_diff_fr = mean(PAR_diff_fr, na.rm = TRUE),
+            global_watt = mean(global_watt, na.rm = TRUE),
+            R_0 = mean(R_0, na.rm = TRUE),
+            R_rel = mean(R_rel, na.rm = TRUE),
+            Rn_sw_ref = mean(Rn_sw_ref, na.rm = TRUE),
+            Rn_ref = mean(Rn_ref, na.rm = TRUE),
+            air_vp = mean(air_vp, na.rm = TRUE),
+            wind_speed = mean(wind_speed, na.rm = TRUE),
+            ET_ref_short_hour = mean(ET_ref_short, na.rm = TRUE),
+            ET_ref_tall_hour = mean(ET_ref_tall, na.rm = TRUE),
+            ET_ref_FAO56_hour = mean(ET_ref_FAO56, na.rm = TRUE),
+            has_UV = !is.na(UVB_umol),
+            .groups = "drop")%>%
+  filter(month_of_year > 3 & month_of_year < 10)  -> hour.tb
+nrow(hour.tb)
+```
+
+```{r}
+minute_2015_latest.tb %>%
+  filter(is.finite(UVB_umol)) %>%
+  mutate(month_name = factor(month.name[month_of_year],
+                             levels = month.name),
+         has_UV = !is.na(UVB_umol)) %>%
+  filter(month_of_year > 3 & month_of_year < 10) -> minute.tb
+nrow(minute.tb)
+```
+
+## Meteorological data
+
+All data used was acquired at the same station, as minute averages of
+measurements at 5 s interval, except for soil water and temperature profiles,
+logged once per hour. Net short wave radiation was estimated by correcting
+measured down welling short wave radiation assuming the recommended value 0f
+0.23 as fractional albedo for a short canopy. Up welling long wave radiation was
+estimated from measured surface temperature. All radiation sensors except the
+pyranomenter were calibrated in situ in sunlight against multiple spectra
+measured at different times the day measured synchronously (within the same
+minute) using a recently calibrated portable spectroradiometer located on site.
+
+For aboveground measurements values were recorded at each minute as the mean 12
+data acquisition events at 5 s intervals. Making a total of over half million
+observations per variable per year, based on over six million data acquisition
+events per variable and year.
+
+For belowground measurements values were logged once per hour.
+
+## Computation of reference evapotranspiration
+
+Functions in R package {photobiology} were used to compute $ET_\mathrm{ref}$
+with the formulation of the Penman-Monteith method for a short canopy
+parametrised according to ASCE-PM (an update to FAO-PM from FAO56) (Allen et
+al., 2006) but adding multipliers to accomodate the different units of
+expression in our data.
+
+## Means for each minute
+
+```{r}
+ETref_short_sw.fig <-
+  ggplot(subset(minute.tb, has_UV & ET_ref_short > 0 & global_watt > 0),
+       aes(global_watt * 1e-3, ET_ref_short)) +
+  stat_hdr(probs = kde_probs) +
+#  geom_density_2d_filled() +
+#  geom_point(alpha = 0.01) +
+#  stat_quant_line(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+#  stat_quant_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ x, color = "red") +
+  stat_poly_eq(formula = y ~ x, color = "red",
+#             label.x = "right", label.y = "bottom",
+             rr.digits = 3, coef.digits = 2,
+             mapping = aes(label = paste(after_stat(eq.label),
+                                         after_stat(rr.label),
+                                         after_stat(n.label),
+                                         sep = "*\", \"*"))) +
+#  scale_fill_viridis_d(direction = -1) +
+  labs(x = "Shortwave downwelling irradiance (kW / m2)",
+       y = "Reference evapotraspiration, short veg. (mm / h)",
+       caption = fit_caption)
+
+ETref_short_sw.fig <- drop_vars(ETref_short_sw.fig)
+
+ETref_short_sw.fig + 
+  expand_limits(x = c(-0.1, 1.2), y = c(-0.07, 1.2)) +
+  theme_classic()
+```
+
+```{r}
+ETref_short_sw.fig + 
+  scale_x_log10() + 
+  scale_y_log10() + 
+  expand_limits(x = c(1e-3, 1.4), y  = c(1e-3, 1.4)) +
+  theme_classic()
+```
+
+```{r}
+ETref_tall_sw.fig <-
+  ggplot(subset(minute.tb, has_UV & ET_ref_tall > 0 & global_watt > 0),
+       aes(global_watt * 1e-3, ET_ref_tall)) +
+  stat_hdr(probs = kde_probs) +
+#  geom_density_2d_filled() +
+#  geom_point(alpha = 0.01) +
+#  stat_quant_line(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+#  stat_quant_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ x, color = "red") +
+  stat_poly_eq(formula = y ~ x, color = "red",
+             label.x = "right", label.y = "bottom",
+             rr.digits = 3,
+             mapping = aes(label = paste(after_stat(eq.label),
+                                         after_stat(rr.label),
+                                         after_stat(n.label),
+                                         sep = "*\", \"*"))) +
+#  scale_fill_viridis_d(direction = -1) +
+  labs(x = "Shortwave downwelling irradiance (kW / m2)",
+       y = "Reference evapotraspiration, tall veg. (mm / h)",
+       caption = fit_caption)
+
+ETref_tall_sw.fig <- drop_vars(ETref_tall_sw.fig)
+  
+ETref_tall_sw.fig + 
+  expand_limits(x = 0, y = 0) +
+  theme_classic()
+```
+
+```{r}
+ETref_tall_sw.fig + 
+  scale_x_log10(limits = c(1e-3, NA)) + 
+  scale_y_log10() + 
+  theme_classic()
+```
+
+```{r}
+ETref_FAO56_sw.fig <-
+  ggplot(subset(minute.tb, has_UV & ET_ref_FAO56 > 0 & global_watt > 0),
+       aes(global_watt * 1e-3, ET_ref_FAO56)) +
+  stat_hdr(probs = kde_probs) +
+#  geom_density_2d_filled() +
+#  geom_point(alpha = 0.01) +
+#  stat_quant_line(formula = y ~ poly(x, 1, raw = TRUE), color = "blue", method = "pfn", quantiles = 0.5) +
+#  stat_quant_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "blue", method = "pfn", quantiles = 0.5) +
+  stat_poly_line(formula = y ~ x, color = "red") +
+  stat_poly_eq(formula = y ~ x,
+               color = "red",
+               label.x = "right", label.y = "bottom",
+               rr.digits = 3,
+               mapping = aes(label = paste(after_stat(eq.label),
+                                           after_stat(rr.label),
+                                           after_stat(n.label),
+                                           sep = "*\", \"*"))) +
+  #  scale_fill_viridis_d(direction = -1) +
+  labs(x = "Shortwave downwelling irradiance (kW / m2)",
+       y = "Reference evapotraspiration, FAO56 (mm / h)",
+       caption = fit_caption)
+
+ETref_FAO56_sw.fig <- drop_vars(ETref_FAO56_sw.fig)
+  
+ETref_FAO56_sw.fig + 
+  expand_limits(x = 0, y = 0) +
+  theme_classic()
+```
+
+```{r}
+ETref_FAO56_sw.fig + 
+  scale_x_log10(limits = c(1e-3, NA)) + 
+  scale_y_log10() + 
+  theme_classic()
+```
+
+```{r}
+ETref_UVB.fig <-
+  ggplot(subset(minute.tb, has_UV & ET_ref_short > 0 & UVB_umol > 0),
+       aes(UVB_umol, ET_ref_short)) +
+  stat_hdr(probs = kde_probs) +
+#  geom_density_2d_filled() +
+#  geom_point(alpha = 0.01) +
+#  stat_quant_line(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+#  stat_quant_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ poly(x, 3, raw = TRUE), color = "purple") +
+  stat_poly_eq(formula = y ~ poly(x, 3, raw = TRUE), color = "purple",
+             label.x = "right", label.y = "bottom",
+             rr.digits = 3,
+             mapping = aes(label = paste(after_stat(eq.label),
+                                         after_stat(rr.label),
+                                         after_stat(n.label),
+                                         sep = "*\", \"*"))) +
+#  scale_fill_viridis_d(direction = -1) +
+  labs(x = "Solar UVB photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration, short (mm / h)",
+       caption = fit_caption)
+
+ETref_UVB.fig <- drop_vars(ETref_UVB.fig)
+  
+ETref_UVB.fig + 
+  expand_limits(x = 0, y = 0) +
+  theme_classic()
+```
+
+```{r}
+ETref_UVB.fig + 
+  scale_x_log10(limits = c(1e-3, NA)) + 
+  scale_y_log10() + 
+  theme_classic()
+```
+
+```{r}
+ETref_UVA.fig <-
+  ggplot(subset(minute.tb, has_UV & ET_ref_short > 0 & ET_ref_short < 1 & global_watt > 10),
+       aes(UVA_umol, ET_ref_short)) +
+  stat_hdr(probs = kde_probs) +
+#  geom_density_2d_filled(adjust = 2) +
+#  geom_point(alpha = 0.01) +
+#  stat_quant_line(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+#  stat_quant_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ x,
+                 color = "cornflowerblue") +
+  stat_poly_eq(formula = y ~ x, color = "cornflowerblue",
+               label.x = "right", label.y = "bottom",
+               rr.digits = 3,
+               mapping = aes(label = paste(after_stat(eq.label),
+                                           after_stat(rr.label),
+                                           after_stat(n.label),
+                                           sep = "*\", \"*"))) +
+  #  scale_fill_viridis_d(direction = -1) +
+  labs(x = "Solar UVA photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration (mm / h)",
+       caption = fit_caption)
+
+ETref_UVA.fig <- drop_vars(ETref_UVA.fig)
+  
+ETref_UVA.fig + 
+  expand_limits(x = 0, y = 0) +
+  theme_bw()
+```
+
+```{r}
+ETref_UVA.fig + 
+  scale_x_log10(limits = c(0.5, NA)) + 
+  scale_y_log10() + 
+  theme_classic() +
+  expand_limits(y = 1.3, x = 300)
+```
+```{r}
+ETref_UVA1.fig <-
+  ggplot(subset(minute.tb, has_UV & ET_ref_short > 0 & ET_ref_short < 1 & global_watt > 10),
+       aes(UVA1_umol, ET_ref_short)) +
+  stat_hdr(probs = kde_probs) +
+#  geom_density_2d_filled(adjust = 2) +
+#  geom_point(alpha = 0.01) +
+#  stat_quant_line(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+#  stat_quant_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ x + I(x^2),
+                 color = "blue") +
+  stat_poly_eq(formula = y ~ x + I(x^2), color = "blue",
+             label.x = "right", label.y = "bottom",
+             rr.digits = 3,
+             mapping = aes(label = paste(after_stat(eq.label),
+                                         after_stat(rr.label),
+                                         after_stat(n.label),
+                                         sep = "*\", \"*"))) +
+#  scale_fill_viridis_d(direction = -1) +
+  labs(x = "Solar UVA1 photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration (mm / h)",
+       caption = fit_caption)
+
+ETref_UVA1.fig <- drop_vars(ETref_UVA1.fig)
+  
+ETref_UVA1.fig + 
+  expand_limits(x = 0, y = 0) +
+  theme_classic()
+```
+
+```{r}
+ETref_UVA1.fig + 
+  scale_x_log10(limits = c(0.5, NA)) + 
+  scale_y_log10() + 
+  theme_classic() +
+  expand_limits(y = 1.3, x = 280)
+```
+
+```{r}
+ETref_UVA2.fig <-
+  ggplot(subset(minute.tb, has_UV & ET_ref_short > 0 & ET_ref_short < 1 & global_watt > 10),
+       aes(UVA2_umol, ET_ref_short)) +
+  stat_hdr(probs = kde_probs) +
+#  geom_density_2d_filled(adjust = 2) +
+#  geom_point(alpha = 0.01) +
+#  stat_quant_line(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+#  stat_quant_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ x + I(x^2),
+                 color = "darkmagenta") +
+  stat_poly_eq(formula = y ~ x + I(x^2), color = "darkmagenta",
+             label.x = "right", label.y = "bottom",
+             rr.digits = 3,
+             mapping = aes(label = paste(after_stat(eq.label),
+                                         after_stat(rr.label),
+                                         after_stat(n.label),
+                                         sep = "*\", \"*"))) +
+#  scale_fill_viridis_d(direction = -1) +
+  labs(x = "Solar UVA2 photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration (mm / h)",
+       caption = fit_caption)
+
+ETref_UVA2.fig <- drop_vars(ETref_UVA2.fig)
+  
+ETref_UVA2.fig + 
+  expand_limits(x = 0, y = 0) +
+  theme_classic()
+```
+
+```{r}
+ETref_UVA2.fig + 
+  scale_x_log10(limits = c(0.2, NA)) + 
+  scale_y_log10() + 
+  theme_classic() +
+  expand_limits(y = 1.3, x = 35)
+```
+
+## Means for each hour of the day
+
+### Radiation balance and evaoptranspiration
+
+Monthly means computed for each hour of the day as the mean of $30 \times 60 =
+1\,800$ logged values or estimated values computed using these logged values as
+input. The line shows $R_0$, the irradiance at the top of the atmosphere and the
+points show monthly means by year from pyranometer measurements $R_{s0}$.
+
+```{r}
+  ggplot(subset(hour.tb, has_UV),
+         aes(hour_of_day, 
+             shape = factor(calendar_year), 
+             linetype = factor(calendar_year))) +
+  geom_line(aes(y = R_0)) +
+  geom_point(aes(y = global_watt)) +
+  expand_limits(y = 0) +
+  scale_x_continuous(breaks = c(0, 6, 12, 18, 24)) +
+  labs(x = "Solar time (h)",
+       y = "Short wave irradiance (W/m2)",
+       shape = "Year", linetype = "Year") +
+  facet_wrap(~month_name)
+```
+
+An estimate of the transmittance of the atmosphere can be obtained from $R_{s0} / R_0$, plotted here. Values for $R_0 < 1\ \mathrm{W} \mathrm{m}^{-2}$ are fixed equal to 0.25.
+
+```{r}
+  ggplot(subset(hour.tb, has_UV),
+         aes(hour_of_day, 
+             shape = factor(calendar_year), 
+             linetype = factor(calendar_year))) +
+  geom_point(aes(y = R_rel)) +
+  expand_limits(y = 0) +
+  scale_x_continuous(breaks = c(0, 6, 12, 18, 24)) +
+  labs(x = "Solar time (h)",
+       y = expression(R[s0] / R[0]),
+       shape = "Year", linetype = "Year") +
+  facet_wrap(~month_name)
+```
+
+Water vapour pressure in the air changes little through the course of the day.
+
+```{r}
+ggplot(subset(hour.tb, has_UV),
+       aes(hour_of_day, air_vp * 1e-3, shape = factor(calendar_year))) +
+  geom_point() +
+  expand_limits(y = 0) +
+  scale_x_continuous(breaks = c(0, 6, 12, 18, 24)) +
+  labs(x = "Solar time (h)",
+       y = "Water vapour pressure (kPa)",
+       shape = "Year") +
+  facet_wrap(~month_name)
+```
+Net irradiances are shown next for shortwave and longwave irradiances. An albedo
+equal to 0.23 was used as in the FAO formulation. The net longwave radiation is
+estimated following FAO.
+
+```{r}
+  ggplot(subset(hour.tb, has_UV),
+         aes(hour_of_day, 
+             shape = factor(calendar_year), 
+             linetype = factor(calendar_year))) +
+  geom_line(aes(y = Rn_ref)) +
+  geom_point(aes(y = Rn_ref)) +
+  expand_limits(y = 0) +
+  scale_x_continuous(breaks = c(0, 6, 12, 18, 24)) +
+  labs(x = "Solar time (h)",
+       y = "Net irradiance (W/m2)",
+       shape = "Year", linetype = "Year") +
+  facet_wrap(~month_name)
+```
+
+FAO reference evapotranspiration ($ET_0$ or $ET_\mathrm{ref}$) is an estimate
+of potential evapotranspiration ($PET$) defined by FAO for a reference condition
+and relying on a specific formulation and computations for not only for
+the Penman-Monteith equation but also for some of its inputs.
+
+```{r}
+  ggplot(subset(hour.tb, has_UV),
+         aes(hour_of_day, ET_ref_short_hour, shape = factor(calendar_year))) +
+  geom_point() +
+  expand_limits(y = 0) +
+  scale_x_continuous(breaks = c(0, 6, 12, 18, 24)) +
+  labs(x = "Solar time (h)",
+       y = "Reference evapotraspiration (mm / h)",
+       shape = "Year") +
+  facet_wrap(~month_name)
+```
+
+### Photon irradiances for wavebands relevant to plants
+
+```{r}
+  ggplot(subset(hour.tb, has_UV),
+         aes(hour_of_day, UVB_umol, shape = factor(calendar_year))) +
+  geom_point() +
+  expand_limits(y = 0) +
+  scale_x_continuous(breaks = c(0, 6, 12, 18, 24)) +
+  labs(x = "Solar time (h)",
+       y = "Solar UVB photon irradiance (umol / m2 / s)",
+       shape = "Year") +
+  facet_wrap(~month_name)
+```
+
+```{r}
+  ggplot(subset(hour.tb, has_UV),
+         aes(hour_of_day, UVA_umol, shape = factor(calendar_year))) +
+  geom_point() +
+  expand_limits(y = 0) +
+  scale_x_continuous(breaks = c(0, 6, 12, 18, 24)) +
+  labs(x = "Solar time (h)",
+       y = "Solar UVA photon irradiance (umol / m2 / s)",
+       shape = "Year") +
+  facet_wrap(~month_name)
+```
+```{r}
+  ggplot(subset(hour.tb, has_UV),
+         aes(hour_of_day, UVA1_umol, shape = factor(calendar_year))) +
+  geom_point() +
+  expand_limits(y = 0) +
+  scale_x_continuous(breaks = c(0, 6, 12, 18, 24)) +
+  labs(x = "Solar time (h)",
+       y = "Solar UVA1 photon irradiance (umol / m2 / s)",
+       shape = "Year") +
+  facet_wrap(~month_name)
+```
+
+```{r}
+  ggplot(subset(hour.tb, has_UV),
+         aes(hour_of_day, UVA2_umol, shape = factor(calendar_year))) +
+  geom_point() +
+  expand_limits(y = 0) +
+  scale_x_continuous(breaks = c(0, 6, 12, 18, 24)) +
+  labs(x = "Solar time (h)",
+       y = "Solar UVA2 photon irradiance (umol / m2 / s)",
+       shape = "Year") +
+  facet_wrap(~month_name)
+```
+
+```{r}
+  ggplot(subset(hour.tb, has_UV),
+         aes(global_watt, UVB_umol, shape = factor(calendar_year))) +
+  geom_point() +
+  expand_limits(y = 0) +
+  labs(x = "Short wave irradiance (W/m2)",
+       y = "Solar UVB photon irradiance (umol / m2 / s)",
+       shape = "Year") +
+  facet_wrap(~month_name)
+```
+
+```{r}
+  ggplot(subset(hour.tb, has_UV),
+         aes(global_watt, UVA_umol, shape = factor(calendar_year))) +
+  geom_point() +
+  expand_limits(y = 0) +
+  labs(x = "Short wave irradiance (W/m2)",
+       y = "Solar UVA photon irradiance (umol / m2 / s)",
+       shape = "Year") +
+  facet_wrap(~month_name)
+```
+
+```{r}
+  ggplot(subset(hour.tb, has_UV),
+         aes(global_watt, UVA1_umol, shape = factor(calendar_year))) +
+  geom_point() +
+  expand_limits(y = 0) +
+  labs(x = "Short wave irradiance (W/m2)",
+       y = "Solar UVA1 photon irradiance (umol / m2 / s)",
+       shape = "Year") +
+  facet_wrap(~month_name)
+```
+
+```{r}
+  ggplot(subset(hour.tb, has_UV),
+         aes(global_watt, UVA2_umol, shape = factor(calendar_year))) +
+  geom_point() +
+  expand_limits(y = 0) +
+  labs(x = "Short wave irradiance (W/m2)",
+       y = "Solar UVA2 photon irradiance (umol / m2 / s)",
+       shape = "Year") +
+  facet_wrap(~month_name)
+```
+
+```{r}
+  ggplot(subset(hour.tb, has_UV),
+         aes(global_watt, blue_umol, shape = factor(calendar_year))) +
+  geom_point() +
+  expand_limits(y = 0) +
+  labs(x = "Short wave irradiance (W/m2)",
+       y = "Solar blue light photon irradiance (umol / m2 / s)",
+       shape = "Year") +
+  facet_wrap(~month_name)
+```
+
+## Predictors of reference evapotranspiration
+
+Based on the data shown above from two summers we plot the overall relationship
+between $ET_\mathrm{ref}$ and UVB photon irradaince.
+
+```{r}
+ETref_UVB.fig <-
+  ggplot(subset(hour.tb, has_UV & ET_ref_short_hour >= 0),
+       aes(UVB_umol, ET_ref_short_hour)) +
+  geom_point() +
+  stat_quant_line(formula = y ~ poly(x, 4, raw = TRUE)) +
+  stat_quant_eq(formula = y ~ poly(x, 4, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ poly(x, 4, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 4, raw = TRUE), color = "red",
+               label.x = "right", label.y = "bottom",
+               mapping = aes(label = paste(after_stat(eq.label),
+                                           after_stat(rr.label),
+                                           after_stat(n.label),
+                                           sep = "*\", \"*"))) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVB photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration (mm / h)",
+       caption = "In blue, quartile and median regressions\n in red OLS regression.")
+ETref_UVB.fig
+```
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-UVB-fig.pdf", width = 8, heigh = 6)
+print(ETref_UVB.fig + theme_classic())
+dev.off()
+```
+
+```{r}
+ETref_UVBa.fig <-
+  ggplot(subset(hour.tb, has_UV & ET_ref_short_hour >= 0),
+       aes(UVB_umol, ET_ref_short_hour)) +
+  geom_point() +
+  stat_quant_band(method = "rqss",
+                  formula = y ~ qss(x, lambda = 1.3)) +
+  expand_limits(x = 0, y = 0) +
+#  scale_x_log10() +
+  labs(x = "Solar UVB photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration (mm / h)")
+ETref_UVBa.fig
+```
+
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-UVB-a-fig.pdf", width = 8, heigh = 6)
+print(ETref_UVBa.fig + theme_classic())
+dev.off()
+```
+
+
+```{r}
+ETref_UVB_month.lm <-
+lmList(ET_ref_short_hour ~ poly(UVB_umol, 3) | calendar_year/factor(month_name), data = subset(hour.tb, has_UV), na.action = na.omit)
+ETref_UVB.adj.r2 <-  unlist(summary(ETref_UVB_month.lm)[["adj.r.squared"]])
+```
+
+
+```{r}
+ETref_UVA.fig <-
+  ggplot(subset(hour.tb, has_UV & ET_ref_short_hour >= 0),
+       aes(UVA_umol, ET_ref_short_hour)) +
+  geom_point() +
+  stat_quant_line(formula = y ~ poly(x, 3, raw = TRUE)) +
+  stat_quant_eq(formula = y ~ poly(x, 3, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ poly(x, 3, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 3, raw = TRUE), color = "red",
+               label.x = "right", label.y = "bottom",
+               mapping = aes(label = paste(after_stat(eq.label),
+                                           after_stat(rr.label),
+                                           after_stat(n.label),
+                                           sep = "*\", \"*"))) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVA photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration (mm / h)",
+       caption = "In blue, quartile and median regressions\n in red OLS regression.")
+ETref_UVA.fig
+```
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-UVA-fig.pdf", width = 8, heigh = 6)
+print(ETref_UVA.fig + theme_classic())
+dev.off()
+```
+
+```{r}
+ETref_UVA_month.lm <-
+lmList(ET_ref_short_hour ~ poly(UVA_umol, 3) | calendar_year/factor(month_name), data = subset(hour.tb, has_UV), na.action = na.omit)
+ETref_UVA.adj.r2 <-  unlist(summary(ETref_UVA_month.lm)[["adj.r.squared"]])
+```
+
+
+
+```{r}
+ETref_UVA1.fig <-
+  ggplot(subset(hour.tb, has_UV & ET_ref_short_hour >= 0),
+       aes(UVA1_umol, ET_ref_short_hour)) +
+  geom_point() +
+  stat_quant_line(formula = y ~ poly(x, 3, raw = TRUE)) +
+  stat_quant_eq(formula = y ~ poly(x, 3, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ poly(x, 3, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 3, raw = TRUE), color = "red",
+               label.x = "right", label.y = "bottom",
+               rr.digits = 3,
+               mapping = aes(label = paste(after_stat(eq.label),
+                                           after_stat(rr.label),
+                                           after_stat(n.label),
+                                           sep = "*\", \"*"))) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVA1 photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration (mm / h)",
+       caption = "In blue, quartile and median regressions\n in red OLS regression.")
+ETref_UVA1.fig
+```
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-UVA1-fig.pdf", width = 8, heigh = 6)
+print(ETref_UVA1.fig + theme_classic())
+dev.off()
+```
+
+```{r}
+ETref_UVA1_month.lm <-
+lmList(ET_ref_short_hour ~ poly(UVA1_umol, 3) | calendar_year/factor(month_name), data = subset(hour.tb, has_UV), na.action = na.omit)
+ETref_UVA1.adj.r2 <-  unlist(summary(ETref_UVA1_month.lm)[["adj.r.squared"]])
+```
+
+```{r}
+ETref_UVA2.fig <-
+  ggplot(subset(hour.tb, has_UV & ET_ref_short_hour >= 0),
+       aes(UVA2_umol, ET_ref_short_hour)) +
+  geom_point() +
+  stat_quant_line(formula = y ~ poly(x, 3, raw = TRUE)) +
+  stat_quant_eq(formula = y ~ poly(x, 3, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ poly(x, 3, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 3, raw = TRUE), color = "red",
+               label.x = "right", label.y = "bottom",
+               rr.digits = 3,
+               mapping = aes(label = paste(after_stat(eq.label),
+                                           after_stat(rr.label),
+                                           after_stat(n.label),
+                                           sep = "*\", \"*"))) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVA2 photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration (mm / h)",
+       caption = "In blue, quartile and median regressions\n in red OLS regression.")
+ETref_UVA2.fig
+```
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-UVA2-fig.pdf", width = 8, heigh = 6)
+print(ETref_UVA2.fig + theme_classic())
+dev.off()
+```
+
+```{r}
+ETref_UVA2_month.lm <-
+lmList(ET_ref_short_hour ~ poly(UVA2_umol, 3) | calendar_year/factor(month_name), data = subset(hour.tb, has_UV), na.action = na.omit)
+ETref_UVA2.adj.r2 <-  unlist(summary(ETref_UVA2_month.lm)[["adj.r.squared"]])
+```
+
+```{r}
+ETref_red.fig <-
+  ggplot(subset(hour.tb, has_UV & ET_ref_short_hour >= 0),
+       aes(red_umol, ET_ref_short_hour)) +
+  geom_point() +
+  stat_quant_line(formula = y ~ poly(x, 2, raw = TRUE)) +
+  stat_quant_eq(formula = y ~ poly(x, 2, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ poly(x, 2, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 2, raw = TRUE), color = "red",
+               label.x = "right", label.y = "bottom",
+               rr.digits = 3,
+               mapping = aes(label = paste(after_stat(eq.label),
+                                           after_stat(rr.label),
+                                           after_stat(n.label),
+                                           sep = "*\", \"*"))) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar red photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration (mm / h)",
+       caption = "In blue, quartile and median regressions\n in red OLS regression.")
+ETref_red.fig
+```
+
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-red-fig.pdf", width = 8, heigh = 6)
+print(ETref_red.fig + theme_classic())
+dev.off()
+```
+
+```{r}
+ETref_red_month.lm <-
+lmList(ET_ref_short_hour ~ poly(red_umol, 3) | calendar_year/factor(month_name), data = subset(hour.tb, has_UV), na.action = na.omit)
+ETref_red.adj.r2 <-  unlist(summary(ETref_red_month.lm)[["adj.r.squared"]])
+```
+
+```{r}
+ETref_UVB_month.fig <-
+  ggplot(subset(hour.tb, has_UV & ET_ref_short_hour >= 0),
+       aes(UVB_umol, ET_ref_short_hour)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_poly_line(formula = y ~ poly(x, 2, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 2, raw = TRUE), 
+               mapping = aes(label = after_stat(adj.rr.label)),
+                             color = "red", size = 3, rr.digits = 3) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVB photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration (mm / h)",
+       shape = "Year",
+       caption = "In red OLS regression, 2nd degree polynomial.") +
+  facet_wrap(~month_name, scales = "fixed") +
+  theme(legend.position = "top")
+ETref_UVB_month.fig
+```
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-UVB-month-fig.pdf", width = 8, heigh = 6)
+print(ETref_UVB_month.fig + theme_bw())
+dev.off()
+```
+
+```{r}
+ETref_UVA_month.lm <-
+lmList(ET_ref_short_hour ~ poly(UVA_umol, 2) | calendar_year/factor(month_name), data = subset(hour.tb, has_UV), na.action = na.omit)
+ETref_UVA.adj.r2 <-  unlist(summary(ETref_UVA_month.lm)[["adj.r.squared"]])
+```
+
+```{r}
+ETref_UVA_month.fig <-
+  ggplot(subset(hour.tb, has_UV & ET_ref_short_hour >= 0),
+       aes(UVA_umol, ET_ref_short_hour)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_poly_line(formula = y ~ poly(x, 2, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 2, raw = TRUE), 
+               mapping = aes(label = after_stat(adj.rr.label)),
+                             color = "red", size = 3, rr.digits = 3) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVA photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration (mm / h)",
+       shape = "Year",
+       caption = "In red OLS regression, 2nd degree polynomial.") +
+  facet_wrap(~month_name, scales = "fixed") +
+  theme(legend.position = "top")
+ETref_UVA_month.fig
+```
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-UVA-month-fig.pdf", width = 8, heigh = 6)
+print(ETref_UVA_month.fig + theme_bw())
+dev.off()
+```
+
+```{r}
+ETref_UVA1_month.lm <-
+lmList(ET_ref_short_hour ~ poly(UVA1_umol, 2) | calendar_year/factor(month_name), data = subset(hour.tb, has_UV), na.action = na.omit)
+ETref_UVA1.adj.r2 <-  unlist(summary(ETref_UVA1_month.lm)[["adj.r.squared"]])
+```
+
+```{r}
+ETref_UVA1_month.fig <-
+  ggplot(subset(hour.tb, has_UV & ET_ref_short_hour >= 0),
+       aes(UVA1_umol, ET_ref_short_hour)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_poly_line(formula = y ~ poly(x, 2, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 2, raw = TRUE), 
+               mapping = aes(label = after_stat(adj.rr.label)),
+                             color = "red", size = 3, rr.digits = 3) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVA1 photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration (mm / h)",
+       shape = "Year",
+       caption = "In red OLS regression, 2nd degree polynomial.") +
+  facet_wrap(~month_name, scales = "fixed") +
+  theme(legend.position = "top")
+ETref_UVA1_month.fig
+```
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-UVA1-month-fig.pdf", width = 8, heigh = 6)
+print(ETref_UVA1_month.fig + theme_bw())
+dev.off()
+```
+
+```{r}
+ETref_UVA2_month.lm <-
+lmList(ET_ref_short_hour ~ poly(UVA2_umol, 2) | calendar_year/factor(month_name), data = subset(hour.tb, has_UV), na.action = na.omit)
+ETref_UVA2.adj.r2 <-  unlist(summary(ETref_UVA2_month.lm)[["adj.r.squared"]])
+```
+
+```{r}
+ETref_UVA2_month.fig <-
+  ggplot(subset(hour.tb, has_UV & ET_ref_short_hour >= 0),
+       aes(UVA2_umol, ET_ref_short_hour)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_poly_line(formula = y ~ poly(x, 2, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 2, raw = TRUE), 
+               mapping = aes(label = after_stat(adj.rr.label)),
+                             color = "red", size = 3, rr.digits = 3) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVA2 photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration (mm / h)",
+       shape = "Year",
+       caption = "In red OLS regression, 2nd degree polynomial.") +
+  facet_wrap(~month_name, scales = "fixed") +
+  theme(legend.position = "top")
+ETref_UVA2_month.fig
+```
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-UVA2-month-fig.pdf", width = 8, heigh = 6)
+print(ETref_UVA2_month.fig + theme_bw())
+dev.off()
+```
+
+```{r}
+ETref_BL_month.lm <-
+lmList(ET_ref_short_hour ~ poly(UVA_umol, 1) | calendar_year/factor(month_name), data = subset(hour.tb, has_UV), na.action = na.omit)
+ETref_BL.adj.r2 <-  unlist(summary(ETref_BL_month.lm)[["adj.r.squared"]])
+```
+
+```{r}
+ETref_BL_month.fig <-
+  ggplot(subset(hour.tb, has_UV & ET_ref_short_hour >= 0),
+       aes(blue_umol, ET_ref_short_hour)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_poly_line(formula = y ~ poly(x, 1, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 1, raw = TRUE), 
+               mapping = aes(label = after_stat(adj.rr.label)),
+                             color = "red", size = 3, rr.digits = 3) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar blue light photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration (mm / h)",
+       shape = "Year",
+       caption = "In red OLS regression, linear.") +
+  facet_wrap(~month_name, scales = "fixed") +
+  theme(legend.position = "top")
+ETref_BL_month.fig
+```
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-BL-month-fig.pdf", width = 8, heigh = 6)
+print(ETref_BL_month.fig + theme_bw())
+dev.off()
+```
+
+```{r}
+ETref_RL_month.lm <-
+lmList(ET_ref_short_hour ~ poly(red_umol, 1) | calendar_year/factor(month_name), data = subset(hour.tb, has_UV), na.action = na.omit)
+ETref_RL.adj.r2 <-  unlist(summary(ETref_RL_month.lm)[["adj.r.squared"]])
+```
+
+```{r}
+ETref_RL_month.fig <-
+  ggplot(subset(hour.tb, has_UV & ET_ref_short_hour >= 0),
+       aes(red_umol, ET_ref_short_hour)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_poly_line(formula = y ~ poly(x, 1, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 1, raw = TRUE), 
+               mapping = aes(label = after_stat(adj.rr.label)),
+                             color = "red", size = 3, rr.digits = 3) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar red light photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration (mm / h)",
+       shape = "Year",
+       caption = "In red OLS regression, linear.") +
+  facet_wrap(~month_name, scales = "fixed") +
+  theme(legend.position = "top")
+ETref_RL_month.fig
+```
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-RL-month-fig.pdf", width = 8, heigh = 6)
+print(ETref_RL_month.fig + theme_bw())
+dev.off()
+```
+
+```{r}
+ETref_FRL_month.lm <-
+lmList(ET_ref_short_hour ~ poly(far_red_umol, 1) | calendar_year/factor(month_name), data = subset(hour.tb, has_UV), na.action = na.omit)
+ETref_FRL.adj.r2 <-  unlist(summary(ETref_FRL_month.lm)[["adj.r.squared"]])
+```
+
+```{r}
+ETref_FRL_month.fig <-
+  ggplot(subset(hour.tb, has_UV & ET_ref_short_hour >= 0),
+       aes(far_red_umol, ET_ref_short_hour)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_poly_line(formula = y ~ poly(x, 1, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 1, raw = TRUE), 
+               mapping = aes(label = after_stat(adj.rr.label)),
+                             color = "red", size = 3, rr.digits = 3) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar far-red light photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration (mm / h)",
+       shape = "Year",
+       caption = "In red OLS regression, linear.") +
+  facet_wrap(~month_name, scales = "fixed") +
+  theme(legend.position = "top")
+ETref_FRL_month.fig
+```
+
+```{r}
+ETref_PAR_month.fig <-
+  ggplot(subset(hour.tb, has_UV & ET_ref_short_hour >= 0),
+       aes(PAR_umol, ET_ref_short_hour)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_poly_line(formula = y ~ poly(x, 1, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 1, raw = TRUE), 
+               mapping = aes(label = after_stat(adj.rr.label)),
+                             color = "red", size = 3, rr.digits = 3) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar PAR photon irradiance (umol / m2 / s)",
+       y = "Reference evapotraspiration (mm / h)",
+       shape = "Year",
+       caption = "In red OLS regression, linear.") +
+  facet_wrap(~month_name, scales = "fixed") +
+  theme(legend.position = "top")
+ETref_PAR_month.fig
+```
+
+## Daily totals
+
+Daily totals computed each as the sum of $24 \times 60 = 1\,440$ obserbed or
+estimated values.
+
+```{r}
+ggplot(subset(day.tb, has_UV),
+       aes(day_of_year, global_Mj_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  expand_limits(y = 0) +
+  labs(x = "Day of year",
+       shape = "Year",
+       y = "Downwelling shortwave radiation (MJ / d)") +
+  facet_wrap(~factor(calendar_year))
+```
+
+```{r}
+  ggplot(subset(day.tb, has_UV),
+         aes(day_of_year, PAR_mol_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  expand_limits(y = 0) +
+    labs(x = "Day of year",
+         shape = "Year",
+         y = "Photosynthetically active radiation (mol / d)") +
+  facet_wrap(~factor(calendar_year))
+```
+
+```{r}
+  ggplot(subset(day.tb, has_UV),
+         aes(day_of_year, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  expand_limits(y = 0) +
+  labs(x = "Day of year",
+       shape = "Year",
+       y = "Reference evapotraspiration (mm / d)") +
+  facet_wrap(~factor(calendar_year))
+```
+
+```{r}
+ETref_UVB_day.fig <-
+  ggplot(subset(day.tb, has_UV),
+       aes(UVB_mmol_day, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_poly_line(formula = y ~ poly(x, 2, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 2, raw = TRUE), 
+               mapping = aes(label = after_stat(adj.rr.label)),
+                             color = "red", size = 3, rr.digits = 3) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVB irradiance (mmol / d)",
+       y = "Reference evapotraspiration (mm / d)",
+       shape = "Year",
+       caption = "In red OLS regression, linear.") +
+  facet_wrap(~month_name, scales = "fixed") +
+  theme(legend.position = "top")
+ETref_UVB_day.fig
+```
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-UVB-day-fig.pdf", width = 8, heigh = 6)
+print(ETref_UVB_day.fig + theme_bw())
+dev.off()
+```
+
+```{r}
+ETref_UVA_day.fig <-
+  ggplot(subset(day.tb, has_UV),
+       aes(UVA_mol_day, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_poly_line(formula = y ~ poly(x, 1, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 1, raw = TRUE), 
+               mapping = aes(label = after_stat(adj.rr.label)),
+                             color = "red", size = 3, rr.digits = 3) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVA irradiance (mol / d)",
+       y = "Reference evapotraspiration (mm / d)",
+       shape = "Year",
+       caption = "In red OLS regression, 3rd degree polynomial.") +
+  facet_wrap(~month_name, scales = "free") +
+  theme(legend.position = "top")
+ETref_UVA_day.fig
+```
+
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-UVA-day-fig.pdf", width = 8, heigh = 6)
+print(ETref_UVA_day.fig + theme_bw())
+dev.off()
+```
+
+
+```{r}
+ETref_UVA1_day.fig <-
+  ggplot(subset(day.tb, has_UV),
+       aes(UVA1_mol_day, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_poly_line(formula = y ~ poly(x, 1, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 1, raw = TRUE), 
+               mapping = aes(label = after_stat(adj.rr.label)),
+                             color = "red", size = 3, rr.digits = 3) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVA1 irradiance (mol / d)",
+       y = "Reference evapotraspiration (mm / d)",
+       shape = "Year",
+       caption = "In red OLS regression, 3rd degree polynomial.") +
+  facet_wrap(~month_name, scales = "free") +
+  theme(legend.position = "top")
+ETref_UVA1_day.fig
+```
+
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-UVA1-day-fig.pdf", width = 8, heigh = 6)
+print(ETref_UVA1_day.fig + theme_bw())
+dev.off()
+```
+
+
+```{r}
+ETref_UVA2_day.fig <-
+  ggplot(subset(day.tb, has_UV),
+       aes(UVA2_mol_day, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_poly_line(formula = y ~ poly(x, 1, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 1, raw = TRUE), 
+               mapping = aes(label = after_stat(adj.rr.label)),
+                             color = "red", size = 3, rr.digits = 3) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVA2 irradiance (mol / d)",
+       y = "Reference evapotraspiration (mm / d)",
+       shape = "Year",
+       caption = "In red OLS regression, 3rd degree polynomial.") +
+  facet_wrap(~month_name, scales = "free") +
+  theme(legend.position = "top")
+ETref_UVA2_day.fig
+```
+
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-UVA2-day-fig.pdf", width = 8, heigh = 6)
+print(ETref_UVA2_day.fig + theme_bw())
+dev.off()
+```
+
+```{r}
+ETref_BL_day.fig <-
+  ggplot(subset(day.tb, has_UV),
+       aes(blue_mol_day, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_poly_line(formula = y ~ poly(x, 1, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 1, raw = TRUE), 
+               mapping = aes(label = after_stat(adj.rr.label)),
+                             color = "red", size = 3, rr.digits = 3) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar blue light (mol / d)",
+       y = "Reference evapotraspiration (mm / d)",
+       shape = "Year",
+       caption = "In red OLS regression, 1st degree polynomial.") +
+  facet_wrap(~month_name, scales = "free") +
+  theme(legend.position = "top")
+ETref_BL_day.fig
+```
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-BL-day-fig.pdf", width = 8, heigh = 6)
+print(ETref_BL_day.fig + theme_bw())
+dev.off()
+```
+
+```{r}
+ETref_RL_day.fig <-
+  ggplot(subset(day.tb, has_UV),
+       aes(red_mol_day, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_poly_line(formula = y ~ poly(x, 1, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 1, raw = TRUE), 
+               mapping = aes(label = after_stat(adj.rr.label)),
+                             color = "red", size = 3, rr.digits = 3) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar red light (mol / d)",
+       y = "Reference evapotraspiration (mm / d)",
+       shape = "Year",
+       caption = "In red OLS regression, 1st degree polynomial.") +
+  facet_wrap(~month_name, scales = "free") +
+  theme(legend.position = "top")
+ETref_RL_day.fig
+```
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-RL-day-fig.pdf", width = 8, heigh = 6)
+print(ETref_RL_day.fig + theme_bw())
+dev.off()
+```
+
+```{r}
+ETref_FRL_day.fig <-
+  ggplot(subset(day.tb, has_UV),
+       aes(far_red_mol_day, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_poly_line(formula = y ~ poly(x, 1, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 1, raw = TRUE), 
+               mapping = aes(label = after_stat(adj.rr.label)),
+                             color = "red", size = 3, rr.digits = 3) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar far-red light (mol / d)",
+       y = "Reference evapotraspiration (mm / d)",
+       shape = "Year",
+       caption = "In red OLS regression, 1st degree polynomial.") +
+  facet_wrap(~month_name, scales = "free") +
+  theme(legend.position = "top")
+ETref_FRL_day.fig
+```
+
+```{r}
+pdf("figures-pdf/ET-figs/ETref-FRL-day-fig.pdf", width = 8, heigh = 6)
+print(ETref_FRL_day.fig + theme_bw())
+dev.off()
+```
+
+```{r}
+ETref_UVB.fig <-
+  ggplot(subset(day.tb, has_UV),
+       aes(UVB_mmol_day, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_quant_line(formula = y ~ poly(x, 2, raw = TRUE)) +
+  stat_quant_eq(formula = y ~ poly(x, 2, raw = TRUE), color = "blue") +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVB radiation exposure (mmol / d)",
+       y = "Reference evapotraspiration (mm / d)",
+       shape = "Year",
+       caption = "In blue, quartile and median regressions.") +
+  expand_limits(y = 10) +
+  facet_wrap(~factor(calendar_year))
+ETref_UVB.fig
+```
+
+```{r}
+ETref_UVB.fig <-
+  ggplot(subset(day.tb, has_UV),
+       aes(UVB_mmol_day, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_poly_line(mapping = aes(linetype = factor(calendar_year)),
+               formula = y ~ poly(x, 2, raw = TRUE)) +
+  stat_poly_eq(formula = y ~ poly(x, 2, raw = TRUE),
+               label.x = "left", label.y = c(0.95, 0.95), size = 2.5,
+               mapping = aes(group = factor(calendar_year),
+                             label = paste(after_stat(eq.label),
+                                           after_stat(rr.label),
+                                           after_stat(n.label),
+                                           sep = "*\", \"*"))) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVB radiation exposure (mmol / d)",
+       y = "Reference evapotraspiration (mm / d)",
+       shape = "Year",
+       caption = "In blue, quartile and median regressions\n in red OLS regression.") +
+  expand_limits(y = 9) +
+  facet_wrap(~factor(calendar_year))
+ETref_UVB.fig
+```
+
+```{r}
+ETref_UVB.fig <-
+  ggplot(subset(day.tb, has_UV),
+       aes(UVB_mmol_day, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year)), alpha = 0.5) +
+  stat_ma_line(mapping = aes(colour = factor(calendar_year))) +
+  stat_ma_eq(label.x = "left", label.y = c(0.95, 0.95), size = 2.5,
+             mapping = aes(colour = factor(calendar_year),
+                           label = paste(after_stat(eq.label),
+                                         after_stat(rr.label),
+                                         after_stat(n.label),
+                                         sep = "*\", \"*"))) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVB radiation exposure (mmol / d)",
+       y = "Reference evapotraspiration (mm / d)",
+       shape = "Year",
+       colour = "Year",
+       caption = "Major axis regressions.") +
+  expand_limits(y = 9) +
+  facet_wrap(~factor(calendar_year))
+ETref_UVB.fig
+```
+
+```{r}
+ETref_UVA.fig <-
+  ggplot(subset(day.tb, has_UV),
+         aes(UVA_mol_day, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_quant_line(formula = y ~ poly(x, 1, raw = TRUE)) +
+  stat_quant_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ poly(x, 1, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "red",
+               label.x = "right", label.y = "bottom",
+               mapping = aes(label = paste(after_stat(eq.label),
+                                           after_stat(rr.label),
+                                           after_stat(n.label),
+                                           sep = "*\", \"*"))) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVA radiation exposure (mol / d)",
+       y = "Reference evapotraspiration (mm / d)",
+       shape = "Year",
+       caption = "In blue, quartile and median regressions\n in red OLS regression.") +
+  expand_limits(y = 9) +
+  facet_wrap(~factor(calendar_year))
+ETref_UVA.fig
+```
+
+```{r}
+ETref_UVA1.fig <-
+  ggplot(subset(day.tb, has_UV),
+         aes(UVA1_mol_day, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_quant_line(formula = y ~ poly(x, 1, raw = TRUE)) +
+  stat_quant_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ poly(x, 1, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "red",
+               label.x = "right", label.y = "bottom",
+               mapping = aes(label = paste(after_stat(eq.label),
+                                           after_stat(rr.label),
+                                           after_stat(n.label),
+                                           sep = "*\", \"*"))) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVA1 radiation exposure (mol / d)",
+       y = "Reference evapotraspiration (mm / d)",
+       shape = "Year",
+       caption = "In blue, quartile and median regressions\n in red OLS regression.") +
+  expand_limits(y = 9) +
+  facet_wrap(~factor(calendar_year))
+ETref_UVA1.fig
+```
+
+```{r}
+ETref_UVA2.fig <-
+  ggplot(subset(day.tb, has_UV),
+         aes(UVA2_mol_day, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_quant_line(formula = y ~ poly(x, 1, raw = TRUE)) +
+  stat_quant_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ poly(x, 1, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "red",
+               label.x = "right", label.y = "bottom",
+               mapping = aes(label = paste(after_stat(eq.label),
+                                           after_stat(rr.label),
+                                           after_stat(n.label),
+                                           sep = "*\", \"*"))) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar UVA2 radiation exposure (mol / d)",
+       y = "Reference evapotraspiration (mm / d)",
+       shape = "Year",
+       caption = "In blue, quartile and median regressions\n in red OLS regression.") +
+  expand_limits(y = 9) +
+  facet_wrap(~factor(calendar_year))
+ETref_UVA2.fig
+```
+
+```{r}
+ETref_BL.fig <-
+  ggplot(subset(day.tb, has_UV),
+         aes(blue_mol_day, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_quant_line(formula = y ~ poly(x, 1, raw = TRUE)) +
+  stat_quant_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ poly(x, 1, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "red",
+               label.x = "right", label.y = "bottom",
+               mapping = aes(label = paste(after_stat(eq.label),
+                                           after_stat(rr.label),
+                                           after_stat(n.label),
+                                           sep = "*\", \"*"))) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar blue light exposure (mol / d)",
+       y = "Reference evapotraspiration (mm / d)",
+       shape = "Year",
+       caption = "In blue, quartile and median regressions\n in red OLS regression.") +
+  expand_limits(y = 9) +
+  facet_wrap(~factor(calendar_year))
+ETref_BL.fig
+```
+
+```{r}
+ETref_RL.fig <-
+  ggplot(subset(day.tb, has_UV),
+         aes(red_mol_day, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_quant_line(formula = y ~ poly(x, 1, raw = TRUE)) +
+  stat_quant_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ poly(x, 1, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "red",
+               label.x = "right", label.y = "bottom",
+               mapping = aes(label = paste(after_stat(eq.label),
+                                           after_stat(rr.label),
+                                           after_stat(n.label),
+                                           sep = "*\", \"*"))) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar red light exposure (mol / d)",
+       y = "Reference evapotraspiration (mm / d)",
+       shape = "Year",
+       caption = "In blue, quartile and median regressions\n in red OLS regression.") +
+  expand_limits(y = 9) +
+  facet_wrap(~factor(calendar_year))
+ETref_RL.fig
+```
+
+```{r}
+ETref_FRL.fig <-
+  ggplot(subset(day.tb, has_UV),
+         aes(far_red_mol_day, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_quant_line(formula = y ~ poly(x, 1, raw = TRUE)) +
+  stat_quant_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ poly(x, 1, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "red",
+               label.x = "right", label.y = "bottom",
+               mapping = aes(label = paste(after_stat(eq.label),
+                                           after_stat(rr.label),
+                                           after_stat(n.label),
+                                           sep = "*\", \"*"))) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "Solar far-red light exposure (mol / d)",
+       y = "Reference evapotraspiration (mm / d)",
+       shape = "Year",
+       caption = "In blue, quartile and median regressions\n in red OLS regression.") +
+  expand_limits(y = 9) +
+  facet_wrap(~factor(calendar_year))
+ETref_FRL.fig
+```
+
+```{r}
+ETref_FRL.fig <-
+  ggplot(subset(day.tb, has_UV),
+         aes(PAR_mol_day, ET_ref_short_day)) +
+  geom_point(aes(shape = factor(calendar_year))) +
+  stat_quant_line(formula = y ~ poly(x, 1, raw = TRUE)) +
+  stat_quant_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "blue") +
+  stat_poly_line(formula = y ~ poly(x, 1, raw = TRUE), color = "red") +
+  stat_poly_eq(formula = y ~ poly(x, 1, raw = TRUE), color = "red",
+               label.x = "right", label.y = "bottom",
+               mapping = aes(label = paste(after_stat(eq.label),
+                                           after_stat(rr.label),
+                                           after_stat(n.label),
+                                           sep = "*\", \"*"))) +
+  expand_limits(x = 0, y = 0) +
+  labs(x = "PAR (mol / d)",
+       y = "Reference evapotraspiration (mm / d)",
+       shape = "Year",
+       caption = "In blue, quartile and median regressions\n in red OLS regression.") +
+  expand_limits(y = 9) +
+  facet_wrap(~factor(calendar_year))
+ETref_FRL.fig
+```
+
+
+## Other measurements
+
+```{r}
+load("data-rda/hour_soil_calc_2015_latest.tb.rda")
+hour_soil_calc_2020_latest.tb <- subset(hour_soil_calc_2015_latest.tb, calendar_year_first >= 2020)
+```
+
+```{r}
+clean_vmc <- function(x, k = 5, limit = 0.42) {
+ z <- runmed(x, k = k)
+  z <- photobiology::despike(x = z, max.spike.width = 24, z.threshold = 0.1, method = "adj.mean")
+#  ifelse(z > limit, NA_real_, z)
+}
+```
+
+```{r}
+hour_soil_calc_2020_latest.tb %>%
+  group_by(time) %>%
+  transmute(time,
+            date = as.Date(time),
+            PAR_umol = PAR_umol_mean,
+            PAR_diff_fr = PAR_diff_fr_mean,
+            UVB_umol = UVB_umol_mean,
+            UVA_umol = UVA_umol_mean,
+            UVA1_umol = UVA1_umol_mean,
+            UVA2_umol = UVA2_umol_mean,
+            blue_umol = blue_umol_mean,
+            red_umol = red_umol_mean,
+            far_red_umol = far_red_umol_mean,
+            global_watt = global_watt_mean,
+            wind_speed = wind_speed_mean,
+            wind_direction = wind_direction_mean,
+            air_temp_C = air_temp_C_mean,
+            surf_temp_C = surf_temp_C_mean,
+            surf2air_temp_delta_C = temp_surf2air_C_mean,
+            surf_temp_error_C = surf_temp_sensor_delta_C_mean,
+            air_RH = air_RH_mean,
+            air_DP = air_DP_mean,
+            air_pressure = air_pressure_mean,
+            day_of_year = day_of_year_first,
+            month_of_year = month_of_year_first,
+            month_name = month_name_first,
+            calendar_year = calendar_year_first,
+            solar_time = solar_time_median,
+            T_5cm = median(T_5cm_1, T_5cm_2, T_5cm_3, na.rm = TRUE),
+            T_10cm = median(T_10cm_1, T_10cm_2, T_10cm_3, na.rm = TRUE),
+            T_20cm = median(T_20cm_1, T_20cm_2, T_20cm_3, na.rm = TRUE),
+            T_30cm = median(T_30cm_1, T_30cm_2, T_30cm_3, na.rm = TRUE),
+            T_40cm = median(T_40cm_1, T_40cm_2, T_40cm_3, na.rm = TRUE),
+            T_50cm = median(T_50cm_1, T_50cm_2, T_50cm_3, na.rm = TRUE),
+            VWC_5cm = median(VWC_5cm_1, VWC_5cm_2, VWC_5cm_3, na.rm = TRUE),
+            VWC_10cm = median(VWC_10cm_1, VWC_10cm_2, VWC_10cm_3, na.rm = TRUE),
+            VWC_20cm = median(VWC_20cm_1, VWC_20cm_2, VWC_20cm_3, na.rm = TRUE),
+            VWC_30cm = median(VWC_30cm_1, VWC_30cm_2, VWC_30cm_3, na.rm = TRUE),
+            VWC_40cm = median(VWC_40cm_1, VWC_40cm_2, VWC_40cm_3, na.rm = TRUE),
+            VWC_50cm = median(VWC_50cm_1, VWC_50cm_2, VWC_50cm_3, na.rm = TRUE),
+            VWC_0to35cm = VWC_5cm * 0.05 + (VWC_10cm + VWC_20cm + VWC_30cm) * 0.1,
+            VWC_0to55cm = VWC_5cm * 0.05 + (VWC_10cm + VWC_20cm + VWC_30cm + VWC_40cm + VWC_50cm_1) * 0.1,
+            Ka_5cm = median(Ka_5cm_1, Ka_5cm_2, Ka_5cm_3, na.rm = TRUE),
+            Ka_10cm = median(Ka_10cm_1, Ka_10cm_2, Ka_10cm_3, na.rm = TRUE),
+            Ka_20cm = median(Ka_20cm_1, Ka_20cm_2, Ka_20cm_3, na.rm = TRUE),
+            Ka_30cm = median(Ka_30cm_1, Ka_30cm_2, Ka_30cm_3, na.rm = TRUE),
+            Ka_40cm = median(Ka_40cm_1, Ka_40cm_2, Ka_40cm_3, na.rm = TRUE),
+            Ka_50cm = median(Ka_50cm_1, Ka_50cm_2, Ka_50cm_3, na.rm = TRUE),
+            BulkEC_5cm = median(BulkEC_5cm_1, BulkEC_5cm_2, BulkEC_5cm_3, na.rm = TRUE),
+            BulkEC_10cm = median(BulkEC_10cm_1, BulkEC_10cm_2, BulkEC_10cm_3, na.rm = TRUE),
+            BulkEC_20cm = median(BulkEC_20cm_1, BulkEC_20cm_2, BulkEC_20cm_3, na.rm = TRUE),
+            BulkEC_30cm = median(BulkEC_30cm_1, BulkEC_30cm_2, BulkEC_30cm_3, na.rm = TRUE),
+            BulkEC_40cm = median(BulkEC_40cm_1, BulkEC_40cm_2, BulkEC_40cm_3, na.rm = TRUE),
+            BulkEC_50cm = median(BulkEC_50cm_1, BulkEC_50cm_2, BulkEC_50cm_3, na.rm = TRUE),
+            R0 = R_0_mean,
+            Rn_sw_ref = Rn_sw_ref_mean,
+            Rn_ref = Rn_ref_mean,
+            ET_ref_short = ET_ref_short_mean,
+            ET_ref_tall = ET_ref_tall_mean,
+            air_vpd = air_vpd_mean,
+            air_vp = air_vp_mean,
+  ) %>%
+  ungroup() -> hour_soil.tb
+
+
+hour_soil.tb$VWC_0to55cm_smooth <- clean_vmc(hour_soil.tb$VWC_0to55cm, k = 23)
+hour_soil.tb$VWC_0to35cm_smooth <- clean_vmc(hour_soil.tb$VWC_0to35cm, k = 23)
+
+hour_soil.tb$delta_VWC_0to55cm <- c(NA_real_, diff(hour_soil.tb$VWC_0to55cm_smooth))
+hour_soil.tb$delta_VWC_0to35cm <- c(NA_real_, diff(hour_soil.tb$VWC_0to35cm_smooth))
+
+names(hour_soil.tb)
+```
+
+```{r}
+hour_soil.tb %>%
+  group_by(calendar_year,
+           day_of_year,
+           month_of_year,
+           month_name) %>%
+  summarize(VWC_0to35cm = mean(VWC_0to35cm),
+            delta_VWC_0to35cm = sum(delta_VWC_0to35cm),
+            VWC_0to55cm = mean(VWC_0to55cm),
+            delta_VWC_0to55cm = sum(delta_VWC_0to55cm),
+            global_watt = sum(global_watt),
+            UVB_mol_day = mean(UVB_umol, na.rm = TRUE) * 3600 * 24 * 1e-6,
+            UVA_mol_day = mean(UVA_umol, na.rm = TRUE) * 3600 * 24 * 1e-6,
+            UVA1_mol_day = mean(UVA1_umol, na.rm = TRUE) * 3600 * 24 * 1e-6,
+            UVA2_mol_day = mean(UVA2_umol, na.rm = TRUE) * 3600 * 24 * 1e-6,
+            blue_mol_day = mean(blue_umol, na.rm = TRUE) * 3600 * 24 * 1e-6,
+            red_umol_mean_day = mean(red_umol, na.rm = TRUE) * 3600 * 24 * 1e-6,
+            far_red_umol_mean_day = mean(far_red_umol, na.rm = TRUE) * 3600 * 24 * 1e-6,
+            PAR_umol_mean_day = mean(PAR_umol, na.rm = TRUE) * 3600 * 24 * 1e-6,
+            global_Mj_day = mean(global_watt, na.rm = TRUE) * 3600 * 24 * 1e-6
+            ) %>%
+  ungroup() ->
+  day_soil.tb
+```
+
+```{r}
+hour_soil.tb %>%
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) %>%
+  ggplot(aes(time, air_temp_C)) +
+  geom_point(alpha = 0.1) +
+  stat_smooth(color = "orange", size = 1.5) +
+  labs(y = "Mean hourly air temperature (C)", x = "Time") ->
+air_t_2m.fig
+air_t_2m.fig
+```
+
+The data below are smoothed using running median with a 24 h window. The colours
+indicqate depth in the soil, with orange at 5 cm, black at 10 cm, green at 20 cm,
+blue at 30 cm and red at 50 cm.
+
+```{r}
+hour_soil.tb %>%
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) %>%
+  select(time, T_5cm, T_10cm, T_20cm, T_30cm, T_40cm, T_50cm) %>%
+  ggplot() +
+#  geom_line(aes(y = runmed(T_5cm, k = 25), x = time), color = "orange") +
+  geom_line(aes(y = runmed(T_10cm, k = 25), x = time), color = "orange") +
+  geom_line(aes(y = runmed(T_20cm, k = 25), x = time), color = "darkgreen") +
+  geom_line(aes(y = runmed(T_30cm, k = 25), x = time), color = "darkblue") +
+  geom_line(aes(y = runmed(T_50cm, k = 25), x = time), color = "darkred") +
+#  scale_x_continuous(breaks = c(0, 0.1, 0.25, 0.5, 0.75, 1)) +
+  labs(y = "Soil temperature at 50 cm (C)", x = "Time") -> 
+soil_t_50cm.fig
+soil_t_50cm.fig
+```
+
+The data below are smoothed using running median with a 24 h window. The colours
+indicqate depth in the soil, with green at 20 cm,
+blue at 30 cm and red at 50 cm. At other depth the data seem bad. This year's
+ongoing drougt is quite obvious.
+
+
+```{r}
+hour_soil.tb %>%
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) %>%
+  select(time, VWC_5cm, VWC_10cm, VWC_20cm, VWC_30cm, VWC_40cm, VWC_50cm) %>%
+  ggplot() +
+#  geom_line(aes(y = runmed(VWC_5cm, k = 72), x = time), color = "orange") +
+  geom_line(aes(y = clean_vmc(VWC_10cm, k = 5), x = time), color = "orange") +
+  geom_line(aes(y = clean_vmc(VWC_20cm, k = 5), x = time), color = "darkgreen") +
+  geom_line(aes(y = clean_vmc(VWC_30cm, k = 5), x = time), color = "darkblue") +
+  geom_line(aes(y = clean_vmc(VWC_40cm, k = 5), x = time), color = "purple") +
+  geom_line(aes(y = clean_vmc(VWC_50cm, k = 5), x = time), color = "darkred") +
+#  scale_x_continuous(breaks = c(0, 0.1, 0.25, 0.5, 0.75, 1)) +
+  labs(y = "Soil water v/v ()", x = "Time") +
+  coord_cartesian(ylim = c(0, 0.75)) -> 
+soil_t_50cm.fig
+soil_t_50cm.fig
+```
+```{r}
+hour_soil.tb %>%
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) %>%
+  select(time, VWC_0to55cm) %>%
+  ggplot(aes(time, clean_vmc(VWC_0to55cm, k = 23))) +
+  geom_line() +
+  expand_limits(y = 0) +
+  labs(y = "Soil water v/v", x = "Time") -> 
+soil_VWC.fig
+soil_VWC.fig
+```
+
+```{r}
+hour_soil.tb %>%
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) %>%
+  select(time, VWC_0to35cm) %>%
+  ggplot(aes(time, clean_vmc(VWC_0to35cm, k = 23))) +
+  geom_line() +
+  expand_limits(y = 0) +
+  labs(y = "Soil water v/v", x = "Time") -> 
+soil_VWC.fig
+soil_VWC.fig
+```
+
+```{r}
+hour_soil.tb %>%
+  filter(delta_VWC_0to55cm < 0 & delta_VWC_0to55cm > -0.0025) %>%
+  select(time, delta_VWC_0to55cm) %>%
+  ggplot(aes(time, delta_VWC_0to55cm, k = 23)) +
+  geom_line() +
+  labs(y = "Delta soil water v/v", x = "Time") -> 
+soil_delta_VWC.fig
+soil_delta_VWC.fig
+```
+
+```{r}
+hour_soil.tb %>%
+  group_by(as.Date(time)) %>%
+  summarize(n = n(),
+            calendar_year = calendar_year[1],
+            VWC_0to55cm = mean(VWC_0to55cm_smooth),
+            delta_VWC_0to55cm = mean(delta_VWC_0to55cm) * n * 550,
+            global_watt = mean(global_watt) * 3600 * n * 1e-6) %>%
+    ungroup() %>%
+  filter(!is.na(calendar_year) & n > 20 &
+           !is.na(delta_VWC_0to55cm) &
+           delta_VWC_0to55cm < 0 & delta_VWC_0to55cm > -10 &
+           global_watt > 10) %>%
+#  select(global_watt, delta_VWC_0to55cm, VWC_0to55cm, calendar_year) %>%
+  ggplot(aes(global_watt, -delta_VWC_0to55cm, color = VWC_0to55cm * 550)) +
+  geom_point() +
+  stat_quant_band(aes(linetype = factor(ifelse(VWC_0to55cm * 550 > 55, "> 55", "< 55"))),
+                  formula = y ~ 0 + x + I(x^2) ) +
+ labs(y = "Soil water loss, top 55 cm (mm d-1)", x = "Global radiation (Mj m-2 d-1)",
+      linetype = "Soil water (mm)", color = "Soil water (mm)") +
+  scale_color_gradient(low = "orange", high = "blue") +
+  facet_wrap(~calendar_year) +
+  theme_bw() -> soil_delta_VWC.fig
+soil_delta_VWC.fig
+```
+
+```{r}
+hour_soil.tb %>%
+  group_by(as.Date(time)) %>%
+  summarize(n = n(),
+            calendar_year = first(calendar_year),
+            VWC_0to55cm = mean(VWC_0to55cm_smooth),
+            delta_VWC_0to55cm = mean(delta_VWC_0to55cm) * n * 550,
+            global_watt = mean(global_watt) * 3600 * n * 1e-6,
+            ET_ref_short = mean(ET_ref_short) * 24) %>%
+    ungroup() %>%
+  filter(!is.na(calendar_year) & n > 20 &
+           !is.na(delta_VWC_0to55cm) &
+           delta_VWC_0to55cm < 0 & delta_VWC_0to55cm > -10 &
+           global_watt > 5) %>%
+#  select(global_watt, delta_VWC_0to55cm, VWC_0to55cm, calendar_year) %>%
+  ggplot(aes(global_watt, -delta_VWC_0to55cm, color = VWC_0to55cm * 550)) +
+  stat_quant_band(aes(y = ET_ref_short), formula = y ~ 0 + x , fill = "dodgerblue") +
+  stat_quant_band(# aes(linetype = factor(ifelse(VWC_0to55cm > 0.12, "> 0.12", "< 0.12"))),
+                  formula = y ~ 0 + x , quantiles = c(0.05, 0.5, 0.95), color = NA ) +
+  geom_point() +
+ labs(y = expression("Soil water loss from top 55 cm and "~~ET[0]~(mm~d^{-1})), 
+      x = expression("Global radiation "*(Mj~m^{-2}~d^{-1})),
+      color = "Soil water\n(mm)") +
+  scale_color_gradient(low = "orange", high = "blue") +
+  facet_wrap(~calendar_year) +
+  theme_bw() -> 
+soil_delta_VWC.fig
+soil_delta_VWC.fig
+```
+
+```{r}
+pdf("figures-pdf/ET-figs/soil_delta_VWC.fig.pdf", width = 8, height = 5)
+print(soil_delta_VWC.fig)
+dev.off()
+```
+
+
+```{r}
+hour_soil.tb %>%
+  group_by(as.Date(time)) %>%
+  summarize(n = n(),
+            calendar_year = first(calendar_year),
+            VWC_0to55cm = mean(VWC_0to55cm_smooth),
+            delta_VWC_0to55cm = mean(delta_VWC_0to55cm) * n * 550,
+            global_watt = mean(global_watt) * 3600 * n * 1e-6,
+            UVA_mol = mean(UVA_umol, na.rm = TRUE) * 3600 * 24 * 1e-6,
+            ET_ref_short = mean(ET_ref_short) * 24) %>%
+    ungroup() %>%
+  filter(!is.na(calendar_year) & n > 20 &
+           !is.na(delta_VWC_0to55cm) &
+           delta_VWC_0to55cm < 0 & delta_VWC_0to55cm > -10 &
+           global_watt > 5) %>%
+#  select(global_watt, delta_VWC_0to55cm, VWC_0to55cm, calendar_year) %>%
+  ggplot(aes(UVA_mol, -delta_VWC_0to55cm, color = VWC_0to55cm * 550)) +
+  stat_quant_band(aes(y = ET_ref_short), formula = y ~ 0 + x , fill = "dodgerblue") +
+  stat_quant_band(# aes(linetype = factor(ifelse(VWC_0to55cm > 0.12, "> 0.12", "< 0.12"))),
+                  formula = y ~ 0 + x , quantiles = c(0.05, 0.5, 0.95), color = NA ) +
+  geom_point() +
+ labs(y = expression("Soil water loss from top 55 cm and "*ET[0]~(mm~d^{-1})), 
+      x = expression("UVA photon exposure "*(mol~m^{-2}~d^{-1})),
+      color = "Soil water\n(mm)") +
+  scale_color_gradient(low = "orange", high = "blue") +
+  facet_wrap(~calendar_year) +
+  theme_bw() -> 
+soil_delta_VWC_UVA.fig
+soil_delta_VWC_UVA.fig
+```
+
+```{r}
+hour_soil.tb %>%
+  group_by(as.Date(time)) %>%
+  summarize(n = n(),
+            calendar_year = first(calendar_year),
+            VWC_0to55cm = mean(VWC_0to55cm_smooth),
+            delta_VWC_0to55cm = mean(delta_VWC_0to55cm) * n * 550,
+            global_watt = mean(global_watt) * 3600 * n * 1e-6,
+            UVA1_mol = mean(UVA1_umol, na.rm = TRUE) * 3600 * 24 * 1e-6,
+            ET_ref_short = mean(ET_ref_short) * 24) %>%
+    ungroup() %>%
+  filter(!is.na(calendar_year) & n > 20 &
+           !is.na(delta_VWC_0to55cm) &
+           delta_VWC_0to55cm < 0 & delta_VWC_0to55cm > -10 &
+           global_watt > 5) %>%
+#  select(global_watt, delta_VWC_0to55cm, VWC_0to55cm, calendar_year) %>%
+  ggplot(aes(UVA1_mol, -delta_VWC_0to55cm, color = VWC_0to55cm * 550)) +
+  stat_quant_band(aes(y = ET_ref_short), formula = y ~ 0 + x , fill = "dodgerblue") +
+  stat_quant_band(# aes(linetype = factor(ifelse(VWC_0to55cm > 0.12, "> 0.12", "< 0.12"))),
+                  formula = y ~ 0 + x , quantiles = c(0.05, 0.5, 0.95), color = NA ) +
+  geom_point() +
+ labs(y = expression("Soil water loss from top 55 cm and "*ET[0]~(mm~d^{-1})), 
+      x = expression("UVA1 photon exposure "*(mol~m^{-2}~d^{-1})),
+      color = "Soil water\n(mm)") +
+  scale_color_gradient(low = "orange", high = "blue") +
+  facet_wrap(~calendar_year) +
+  theme_bw() -> 
+soil_delta_VWC_UVA1.fig
+soil_delta_VWC_UVA1.fig
+```
+
+```{r}
+hour_soil.tb %>%
+  group_by(as.Date(time)) %>%
+  summarize(n = n(),
+            calendar_year = first(calendar_year),
+            VWC_0to55cm = mean(VWC_0to55cm_smooth),
+            delta_VWC_0to55cm = mean(delta_VWC_0to55cm) * n * 550,
+            global_watt = mean(global_watt) * 3600 * n * 1e-6,
+            UVA2_mol = mean(UVA2_umol, na.rm = TRUE) * 3600 * 24 * 1e-6,
+            ET_ref_short = mean(ET_ref_short) * 24) %>%
+    ungroup() %>%
+  filter(!is.na(calendar_year) & n > 20 &
+           !is.na(delta_VWC_0to55cm) &
+           delta_VWC_0to55cm < 0 & delta_VWC_0to55cm > -10 &
+           global_watt > 5) %>%
+#  select(global_watt, delta_VWC_0to55cm, VWC_0to55cm, calendar_year) %>%
+  ggplot(aes(UVA2_mol, -delta_VWC_0to55cm, color = VWC_0to55cm * 550)) +
+  stat_quant_band(aes(y = ET_ref_short), formula = y ~ 0 + x , fill = "dodgerblue") +
+  stat_quant_band(# aes(linetype = factor(ifelse(VWC_0to55cm > 0.12, "> 0.12", "< 0.12"))),
+                  formula = y ~ 0 + x , quantiles = c(0.05, 0.5, 0.95), color = NA ) +
+  geom_point() +
+ labs(y = expression("Soil water loss from top 55 cm and "*ET[0]~(mm~d^{-1})), 
+      x = expression("UVA2 photon exposure "*(mol~m^{-2}~d^{-1})),
+      color = "Soil water\n(mm)") +
+  scale_color_gradient(low = "orange", high = "blue") +
+  facet_wrap(~calendar_year) +
+  theme_bw() -> 
+soil_delta_VWC_UVA2.fig
+soil_delta_VWC_UVA2.fig
+```
+
+
+```{r}
+hour_soil.tb %>%
+  group_by(as.Date(time)) %>%
+  summarize(n = n(),
+            calendar_year = first(calendar_year),
+            VWC_0to55cm = mean(VWC_0to55cm_smooth),
+            delta_VWC_0to55cm = mean(delta_VWC_0to55cm) * n * 550,
+            global_watt = mean(global_watt) * 3600 * n * 1e-6,
+            UVB_mmol = mean(UVB_umol, na.rm = TRUE) * 3600 * 24 * 1e-3,
+            ET_ref_short = mean(ET_ref_short) * 24) %>%
+    ungroup() %>%
+  filter(!is.na(calendar_year) & n > 20 &
+           !is.na(delta_VWC_0to55cm) &
+           delta_VWC_0to55cm < 0 & delta_VWC_0to55cm > -10 &
+           global_watt > 5) %>%
+#  select(global_watt, delta_VWC_0to55cm, VWC_0to55cm, calendar_year) %>%
+  ggplot(aes(UVB_mmol, -delta_VWC_0to55cm, color = VWC_0to55cm * 550)) +
+  stat_quant_band(aes(y = ET_ref_short), formula = y ~ 0 + x , fill = "dodgerblue") +
+  stat_quant_band(# aes(linetype = factor(ifelse(VWC_0to55cm > 0.12, "> 0.12", "< 0.12"))),
+                  formula = y ~ 0 + x , quantiles = c(0.05, 0.5, 0.95), color = NA ) +
+  geom_point() +
+ labs(y = expression("Soil water loss from top 55 cm and "*ET[0]~(mm~d^{-1})), 
+      x = expression("UVB photon exposure "*(mmol~m^{-2}~d^{-1})),
+      color = "Soil water\n(mm)") +
+  scale_color_gradient(low = "orange", high = "blue") +
+  facet_wrap(~calendar_year) +
+  theme_bw() -> 
+soil_delta_VWC_UVB.fig
+soil_delta_VWC_UVB.fig
+```
+
+```{r}
+pdf("figures-pdf/ET-figs/soil_delta_VWC_UVB.fig.pdf", width = 8, height = 5)
+print(soil_delta_VWC_UVB.fig)
+dev.off()
+```
+
+```{r}
+hour_soil.tb %>%
+  filter(!is.na(calendar_year) &
+           calendar_year > 2020 &
+           month_of_year > 3 & month_of_year < 11 &
+           global_watt > 50 &
+           air_temp_C > 5) %>%
+#  select(global_watt, delta_VWC_0to55cm, VWC_0to55cm, calendar_year) %>%
+  ggplot(aes(global_watt, surf_temp_C, color = VWC_0to55cm)) +
+#  stat_quant_band(aes(y = ET_ref_short), formula = y ~ 0 + x , fill = "dodgerblue") +
+#  stat_quant_band(# aes(linetype = factor(ifelse(VWC_0to55cm > 0.12, "> 0.12", "< 0.12"))),
+#                  formula = y ~ 0 + x , quantiles = c(0.05, 0.5, 0.95), color = NA ) +
+  geom_point(alpha = 0.2) +
+ labs(y = "Surface temperature (C)", 
+      x = expression("Global radiation "*(W~m^{-2})),
+      color = "Soil water\n(mm)") +
+  scale_color_gradient(low = "orange", high = "blue") +
+  facet_wrap(~calendar_year) +
+  theme_bw() -> 
+surf_temp.fig
+surf_temp.fig
+```
+
+
+```{r}
+hour_soil.tb %>%
+  filter(!is.na(calendar_year) &
+           calendar_year > 2020 &
+           month_of_year > 2 & month_of_year < 12 &
+           global_watt > 5 &
+           air_temp_C > -5) %>%
+#  select(global_watt, delta_VWC_0to55cm, VWC_0to55cm, calendar_year) %>%
+  ggplot(aes(global_watt, surf2air_temp_delta_C, color = VWC_0to55cm)) +
+  stat_quant_band(formula = y  ~ x,
+                  aes(linetype = factor(ifelse(VWC_0to55cm > 0.2, "> 0.2", "< 0.2")))) +
+#  stat_quant_band(# aes(linetype = factor(ifelse(VWC_0to55cm > 0.12, "> 0.12", "< 0.12"))),
+#                  formula = y ~ 0 + x , quantiles = c(0.05, 0.5, 0.95), color = NA ) +
+  geom_point(alpha = 0.2) +
+ labs(y = "Surface to air temperature difference (C)", 
+      x = expression("Global radiation "*(W~m^{-2})),
+      color = "Soil water\n(mm)",
+      linetype = "Soil water range") +
+  scale_color_gradient(low = "orange", high = "blue") +
+  facet_wrap(~calendar_year) +
+  theme_bw() -> 
+soil_delta_temp.fig
+soil_delta_temp.fig
+```
+
+```{r}
+hour_soil.tb %>%
+  filter(!is.na(calendar_year) &
+           calendar_year > 2020 &
+           global_watt > 50 &
+           air_temp_C > 5) %>%
+#  select(global_watt, delta_VWC_0to55cm, VWC_0to55cm, calendar_year) %>%
+  ggplot(aes(VWC_0to55cm, surf2air_temp_delta_C, color = global_watt)) +
+#  stat_quant_band(aes(y = ET_ref_short), formula = y ~ 0 + x , fill = "dodgerblue") +
+#  stat_quant_band(# aes(linetype = factor(ifelse(VWC_0to55cm > 0.12, "> 0.12", "< 0.12"))),
+#                  formula = y ~ 0 + x , quantiles = c(0.05, 0.5, 0.95), color = NA ) +
+  geom_point(alpha = 0.2) +
+ labs(y = "Surface to air temperature difference (C)", 
+      x = "Soil water\n(mm)",
+      color = expression("Global rad. "*(W~m^{-2}))) +
+  scale_color_gradient(low = "grey75", high = "yellow") +
+  expand_limits(x = 0) +
+  facet_wrap(~calendar_year) +
+  theme_dark() -> 
+soil_delta_temp.fig
+soil_delta_temp.fig
+```
+
+
+```{r}
+hour_soil.tb %>%
+  group_by(as.Date(time)) %>%
+  summarize(n = n(),
+            calendar_year = calendar_year[1],
+            VWC_0to35cm = mean(VWC_0to35cm_smooth),
+            delta_VWC_0to35cm = mean(delta_VWC_0to35cm) * n * 350,
+            global_watt = mean(global_watt) * 3600 * n * 1e-6) %>%
+    ungroup() %>%
+  filter(!is.na(calendar_year) & n > 20 &
+           !is.na(delta_VWC_0to35cm) &
+           delta_VWC_0to35cm < 0 & delta_VWC_0to35cm > -5 &
+           global_watt > 5) %>%
+#  select(global_watt, delta_VWC_0to55cm, VWC_0to55cm, calendar_year) %>%
+  ggplot(aes(global_watt, -delta_VWC_0to35cm, color = VWC_0to35cm * 350)) +
+  geom_point() +
+  stat_quant_band(aes(linetype = factor(ifelse(VWC_0to35cm * 350 > 15, "> 15", "< 15"))),
+                  formula = y ~ 0 + x + I(x^2) ) +
+ labs(y = "Soil water loss (mm d-1)", x = "Global radiation (Mj m-2 d-1)",
+      linetype = "Soil water (mm)", color = "Soil water (mm)") +
+  scale_color_gradient(low = "orange", high = "blue") +
+  facet_wrap(~calendar_year) +
+  theme_bw() -> 
+soil_delta_VWC.fig
+soil_delta_VWC.fig
+```
+
+```{r}
+hour_soil.tb %>%
+  group_by(as.Date(time)) %>%
+  summarize(n = n(),
+            calendar_year = calendar_year[1],
+            VWC_0to35cm = mean(VWC_0to35cm_smooth),
+            delta_VWC_0to35cm = mean(delta_VWC_0to35cm) * n * 350,
+            global_watt = mean(global_watt) * 3600 * n * 1e-6,
+            ET_ref_short = mean(ET_ref_short) * 24) %>%
+    ungroup() %>%
+  filter(!is.na(calendar_year) & n > 20 &
+           !is.na(delta_VWC_0to35cm) &
+           delta_VWC_0to35cm < 0 & delta_VWC_0to35cm > -5 &
+           global_watt > 5) %>%
+#  select(global_watt, delta_VWC_0to35cm, VWC_0to35cm, calendar_year) %>%
+  ggplot(aes(global_watt, -delta_VWC_0to35cm, color = VWC_0to35cm * 350)) +
+  geom_point() +
+  stat_quant_band(# aes(linetype = factor(ifelse(VWC_0to35cm > 0.12, "> 0.12", "< 0.12"))),
+                  formula = y ~ 0 + x , quantiles = c(0.05, 0.5, 0.95), color = NA ) +
+  stat_quant_band(aes(y = ET_ref_short)) +
+ labs(y = expression("Soil water loss from top 35 cm and "*ET[0]~(mm~d^{-1})), 
+      x = "Global radiation (Mj m-2 d-1)",
+      color = "Soil water (mm)") +
+  scale_color_gradient(low = "orange", high = "blue") +
+  facet_wrap(~calendar_year) +
+  theme_bw() -> 
+soil_delta_VWC.fig
+soil_delta_VWC.fig
+```

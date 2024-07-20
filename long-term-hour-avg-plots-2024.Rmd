@@ -1,0 +1,415 @@
+---
+title: "Data from radiation and weather in Viikki field"
+subtitle: "Hourly means, 2024-"
+author: "Pedro J. Aphalo"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# library(tint)
+# invalidate cache when the package version changes
+knitr::opts_chunk$set(tidy = FALSE) # , cache.extra = packageVersion('tint')
+options(htmltools.dir.version = FALSE)
+```
+
+When new data is available, first run 'read-data.Rmd', possibly after clearing the 'knitr' cache.
+
+```{r}
+library(tidyverse)
+library(ggridges)
+library(lubridate)
+
+options(warnPartialMatchAttr = FALSE,
+        warnPartialMatchDollar = FALSE,
+        warnPartialMatchArgs = FALSE)
+```
+
+
+```{r}
+rm(list = ls(pattern = "*"))
+load("data-rda/hour_2024_latest.tb.rda")
+range(hour_2024_latest.tb$time)
+colnames(hour_2024_latest.tb)
+print(object.size(hour_2024_latest.tb), standard = "SI", units = "MB", digits = 2)
+```
+
+## Important note
+
+ggplot stores the whole data frame in the ggplot object. Here we have 203 variables and will in the future possibly have thousands of observations. I have changed the code to first select the columns to be used before building the plot. This reduces the size of plots from 72 MB to 2-3 MB and also makes plotting a lot faster.
+
+## Density plots by month (ridge plots)
+
+## PAR photon irradiance
+
+One hour averages for sun above the horizon of measurements with LI-190 quantum sensor every 5 seconds. During winter-time some snow could have accumulated on the sensor.
+
+
+```{r}
+hour_2024_latest.tb |>
+  filter(PAR_umol_mean > 0.01) |>
+  select(month_name, PAR_umol_mean, calendar_year) |>
+  ggplot(aes(x = PAR_umol_mean, y = month_name)) +
+  geom_density_ridges(na.rm = TRUE, scale = 2.5, fill = "darkgreen",
+                      alpha = 0.33, bandwidth = 0.05) +
+  scale_x_log10(breaks = c(0.01, 0.03, 0.1, 0.3, 1, 3, 10, 30, 100, 300, 1000, 3000), 
+                minor_breaks = NULL, 
+                labels = scales::format_format(digits = 3, scientific = FALSE)) +
+  scale_y_discrete(drop=FALSE) +
+#  coord_cartesian(xlim = c(1, 3000)) +
+  labs(x = expression(PAR~~photon~~irradiance~~(mu*mol~m^{-2}~s^{-1})), y = "Month of the year") -> par_month_rigdes.fig
+par_month_rigdes.fig
+```
+
+```{r, eval=FALSE}
+par_month_rigdes.fig +
+  facet_wrap(~calendar_year) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+
+
+```{r}
+pdf("figures-pdf-2024/par-month-ridges-fig.pdf", width = 10, height = 6)
+print(par_month_rigdes.fig)
+dev.off()
+```
+
+## ET reference
+
+One minute averages for sun above the horizon of measurements with LI-190 quantum sensor every 5 seconds. During winter-time some snow could have accumulated on the sensor.
+
+```{r}
+hour_2024_latest.tb |>
+  filter(PAR_umol_mean > 5) |>
+ select(month_name, ET_ref_FAO56_mean) |>
+ ggplot(aes(x = ET_ref_FAO56_mean, y = month_name)) +
+ geom_vline(xintercept = c(0.1, 1), linetype = "dashed", colour = "red") +
+ geom_density_ridges(na.rm = TRUE, scale = 4.5, fill = "grey50", alpha = 0.33, bandwidth = 0.01) +
+ scale_y_discrete(drop=FALSE) +
+ scale_x_continuous(breaks = c(0, 0.1, 0.25, 0.5, 0.75, 1)) +
+ labs(x = "Evapotranspiration FAO56", y = "Month of the year") -> ET_ref_FAO_month_rigdes.fig
+ ET_ref_FAO_month_rigdes.fig
+```
+
+```{r}
+pdf("figures-pdf/ET-ref-FAO-month-ridges-fig.pdf", width = 10, height = 6)
+print(ET_ref_FAO_month_rigdes.fig)
+dev.off()
+```
+
+```{r}
+hour_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  select(month_name, air_DP_mean) |>
+  ggplot(aes(x = air_DP_mean, y = month_name)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "red") +
+  geom_density_ridges(na.rm = TRUE, scale = 3.5, fill = "grey50", alpha = 0.33) +
+  scale_y_discrete(drop=FALSE) +
+#  scale_x_continuous(breaks = c(0, 0.1, 0.25, 0.5, 0.75, 1)) +
+  labs(x = "Dew point (C)", y = "Month of the year") -> dew_point_month_rigdes.fig
+dew_point_month_rigdes.fig
+```
+
+```{r}
+hour_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  select(month_name, air_temp_C_mean) |>
+  ggplot(aes(x = air_temp_C_mean, y = month_name)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "red") +
+  geom_density_ridges(na.rm = TRUE, scale = 3.5, fill = "grey50", alpha = 0.33) +
+  scale_y_discrete(drop=FALSE) +
+#  scale_x_continuous(breaks = c(0, 0.1, 0.25, 0.5, 0.75, 1)) +
+  labs(x = "Air temperature (C)", y = "Month of the year") -> air_temp_month_rigdes.fig
+air_temp_month_rigdes.fig
+```
+
+```{r}
+hour_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  select(month_name, air_RH_mean) |>
+  ggplot(aes(x = air_RH_mean, y = month_name)) +
+  geom_vline(xintercept = c(0, 100), linetype = "dashed", colour = "red") +
+  geom_density_ridges(na.rm = TRUE, scale = 3.5, fill = "grey50", alpha = 0.33) +
+  scale_y_discrete(drop=FALSE) +
+#  scale_x_continuous(breaks = c(0, 0.1, 0.25, 0.5, 0.75, 1)) +
+  labs(x = "Air relative humidity (%)", y = "Month of the year") -> air_temp_month_rigdes.fig
+air_temp_month_rigdes.fig
+```
+
+```{r}
+hour_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  select(month_name, wind_speed_mean) |>
+  ggplot(aes(x = wind_speed_mean, y = month_name)) +
+  geom_density_ridges(na.rm = TRUE, scale = 1.5, fill = "grey50", alpha = 0.33) +
+  scale_y_discrete(drop=FALSE) +
+#  scale_x_continuous(breaks = c(0, 0.1, 0.25, 0.5, 0.75, 1)) +
+  labs(x = "Wind speed (m s-1)", y = "Month of the year") -> wind_speed_month_rigdes.fig
+wind_speed_month_rigdes.fig
+```
+
+```{r}
+hour_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  select(month_name, air_pressure_mean) |>
+  ggplot(aes(x = air_pressure_mean, y = month_name)) +
+  geom_density_ridges(na.rm = TRUE, scale = 1.5, fill = "grey50", alpha = 0.33) +
+  scale_y_discrete(drop=FALSE) +
+#  scale_x_continuous(breaks = c(0, 0.1, 0.25, 0.5, 0.75, 1)) +
+  labs(x = "Air Pressure (Pa)", y = "Month of the year") -> 
+air_pressure_month_rigdes.fig
+air_pressure_month_rigdes.fig
+```
+
+# Time-series plots
+
+```{r}
+hour_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  select(time, global_watt_mean, global_watt_min, global_watt_max) |>
+  ggplot(aes(time)) +
+  geom_line(aes(y = global_watt_mean)) +
+  geom_line(aes(y = global_watt_min), colour = "blue") +
+  geom_line(aes(y = global_watt_max), colour = "red") +
+  labs(y = expression("Global radiation "*(W~m^{-2})), x = "Time") -> 
+global_radiation.fig
+global_radiation.fig
+```
+
+
+```{r}
+hour_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  select(time, PAR_umol_mean, PAR_umol_min, PAR_umol_max) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_line(aes(y = PAR_umol_mean)) +
+  geom_line(aes(y = PAR_umol_min), colour = "blue") +
+  geom_line(aes(y = PAR_umol_max), colour = "red") +
+  labs(y = expression("PAR "*(mu*mol~m^{-2}~s^{-1})), x = "Time") -> 
+PAR.fig
+PAR.fig
+```
+
+```{r}
+hour_2024_latest.tb %>%
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) %>%
+  select(time, UVB_umol_mean, UVB_umol_min, UVB_umol_max) %>%
+  ggplot(aes(time)) +
+  geom_line(aes(y = UVB_umol_mean)) +
+  geom_line(aes(y = UVB_umol_min), colour = "blue") +
+  geom_line(aes(y = UVB_umol_max), colour = "red") +
+  labs(y = expression("UV-B "*(mu*mol~m^{-2}~s^{-1})), x = "Time") -> 
+UVB.fig
+UVB.fig
+```
+
+```{r}
+hour_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  select(time, UVA2_umol_mean) |>
+  ggplot(aes(time, UVA2_umol_mean)) +
+  geom_line() +
+  labs(y = expression("UV-A2 "*(mu*mol~m^{-2}~s^{-1})), x = "Time") -> 
+UVA2.fig
+UVA2.fig
+```
+
+```{r}
+hour_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  select(time, UVA1_umol_mean) |>
+  ggplot(aes(time, UVA1_umol_mean)) +
+  geom_line() +
+  labs(y = expression("UV-A1 "*(mu*mol~m^{-2}~s^{-1})), x = "Time") -> 
+UVA1.fig
+UVA1.fig
+```
+
+```{r}
+hour_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  select(time, blue_umol_mean) |>
+  ggplot(aes(time, blue_umol_mean)) +
+  geom_line() +
+  labs(y = expression("Blue light "*(mu*mol~m^{-2}~s^{-1})), x = "Time") -> 
+Blue.fig
+Blue.fig
+```
+
+```{r}
+hour_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  select(time, rain_mm_h) |>
+  ggplot(aes(time, rain_mm_h)) +
+  geom_line() +
+  labs(y = expression("Rain "*(mm~h^{-1})), x = "Time") -> 
+Blue.fig
+Blue.fig
+```
+
+```{r}
+hour_2024_latest.tb %>%
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) %>%
+  select(time, ET_ref_FAO56_mean, ET_ref_FAO56_min, ET_ref_FAO56_max) %>%
+  ggplot(aes(time)) +
+  geom_line(aes(y = ET_ref_FAO56_min), colour = "blue") +
+  geom_line(aes(y = ET_ref_FAO56_max), colour = "red") +
+  geom_line(aes(y = ET_ref_FAO56_mean)) +
+  labs(y = expression("Reference ET, FAO56 "*(mm~h^{-1})), x = "Time") -> 
+ET_ref_FAO56.fig
+ET_ref_FAO56.fig
+```
+
+```{r}
+hour_2024_latest.tb %>%
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) %>%
+  select(time, R_rel_mean, R_rel_min, R_rel_max) %>%
+  ggplot(aes(time)) +
+  geom_line(aes(y = R_rel_min), colour = "blue") +
+  geom_line(aes(y = R_rel_max), colour = "red") +
+  geom_line(aes(y = R_rel_mean)) +
+  labs(y = "Relative atmosphere transmittance (/1)", x = "Time") -> 
+R_rel.fig
+R_rel.fig
+```
+
+
+```{r}
+hour_2024_latest.tb %>%
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) %>%
+  select(time, R_0_mean, R_0_min, R_0_max) %>%
+  ggplot(aes(time)) +
+  geom_line(aes(y = R_0_min), colour = "blue") +
+  geom_line(aes(y = R_0_max), colour = "red") +
+  geom_line(aes(y = R_0_mean)) +
+  labs(y = expression("AM0 radiation (estimate) "*(W~m^{-2})), x = "Time") -> 
+R_rel.fig
+R_rel.fig
+```
+
+```{r}
+hour_2024_latest.tb %>%
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) %>%
+  select(time, ET_ref_FAO56_mean, ET_ref_FAO56_min, ET_ref_FAO56_max) %>%
+  ggplot(aes(time)) +
+  geom_line(aes(y = ET_ref_FAO56_min), colour = "blue") +
+  geom_line(aes(y = ET_ref_FAO56_max), colour = "red") +
+  geom_line(aes(y = ET_ref_FAO56_mean)) +
+  labs(y = expression("Reference ET, FAO56 "*(mm~h^{-1})), x = "Time") -> 
+ET_ref_FAO56.fig
+ET_ref_FAO56.fig
+```
+```{r}
+hour_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  select(time, T_5cm, T_10cm, T_20cm, T_30cm, T_40cm, T_50cm) |>
+  ggplot() +
+  geom_line(aes(y = T_5cm, x = time), color = "red") +
+  geom_line(aes(y = T_10cm, x = time)) +
+  geom_line(aes(y = T_20cm, x = time), color = "darkgreen") +
+  geom_line(aes(y = T_30cm, x = time), color = "darkblue") +
+  geom_line(aes(y = T_50cm, x = time), color = "darkred") +
+#  scale_x_continuous(breaks = c(0, 0.1, 0.25, 0.5, 0.75, 1)) +
+  labs(y = "Soil temperature at 5 to 50 cm depth (C)", x = "Time") -> 
+soil_t_50cm.fig
+soil_t_50cm.fig
+```
+
+```{r}
+hour_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  select(time, VWC_5cm, VWC_10cm, VWC_20cm, VWC_30cm, VWC_50cm) |>
+  ggplot() +
+  geom_line(aes(y = VWC_5cm, x = time), color = "red") +
+  geom_line(aes(y = VWC_10cm, x = time)) +
+  geom_line(aes(y = VWC_20cm, x = time), color = "darkgreen") +
+  geom_line(aes(y = VWC_30cm, x = time), color = "darkblue") +
+  geom_line(aes(y = VWC_50cm, x = time), color = "darkred") +
+#  scale_x_continuous(breaks = c(0, 0.1, 0.25, 0.5, 0.75, 1)) +
+  labs(y = "Soil water v/v ()", x = "Time") +
+  expand_limits(y = 0) -> 
+soil_VWC.fig
+soil_VWC.fig
+```
+
+```{r}
+hour_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  select(time, BulkEC_10cm, BulkEC_20cm, BulkEC_30cm, BulkEC_50cm) |>
+  ggplot() +
+  geom_line(aes(y = BulkEC_10cm, x = time)) +
+  geom_line(aes(y = BulkEC_20cm, x = time), color = "darkgreen") +
+  geom_line(aes(y = BulkEC_30cm, x = time), color = "darkblue") +
+  geom_line(aes(y = BulkEC_50cm, x = time), color = "darkred") +
+#  scale_x_continuous(breaks = c(0, 0.1, 0.25, 0.5, 0.75, 1)) +
+  labs(y = "Bulk EC (dS/m)", x = "Time") ->
+soil_BulkEC.fig
+soil_BulkEC.fig
+```
+
+```{r}
+hour_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  select(time, Ka_5cm, Ka_10cm, Ka_20cm, Ka_30cm, Ka_50cm) |>
+  ggplot() +
+  geom_line(aes(y = Ka_5cm, x = time), color = "red") +
+  geom_line(aes(y = Ka_10cm, x = time)) +
+  geom_line(aes(y = Ka_20cm, x = time), color = "darkgreen") +
+  geom_line(aes(y = Ka_30cm, x = time), color = "darkblue") +
+  geom_line(aes(y = Ka_50cm, x = time), color = "darkred") +
+#  scale_x_continuous(breaks = c(0, 0.1, 0.25, 0.5, 0.75, 1)) +
+  labs(y = "Relative Dielectric Permittivity (1..80)", x = "Time") +
+  expand_limits(y = 0) -> 
+soil_Ka.fig
+soil_Ka.fig
+```
+
+
+## Small plot
+
+```{r}
+hour_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  filter(time >= ymd_hms("2024-06-12 00:00:00")) |>
+  select(time, T_1, T_2, T_3) |>
+  ggplot() +
+  geom_line(aes(y = T_1, x = time), color = "red") +
+  geom_line(aes(y = T_2, x = time)) +
+  geom_line(aes(y = T_3, x = time), color = "darkblue") +
+#  scale_x_continuous(breaks = c(0, 0.1, 0.25, 0.5, 0.75, 1)) +
+  labs(y = "Soil temperature at 5 to 50 cm depth (C)", x = "Time") -> 
+soil_t_20cm.fig
+soil_t_20cm.fig
+```
+
+
+```{r}
+hour_2024_latest.tb |>
+#  filter(sun_elevation > 0 & PAR_Den_Avg > 5) |>
+  filter(time >= ymd_hms("2024-06-12 00:00:00")) |>
+  select(time, VWC_1, VWC_2, VWC_3) |>
+  ggplot() +
+  geom_line(aes(y = VWC_1, x = time), color = "red") +
+  geom_line(aes(y = VWC_2, x = time)) +
+  geom_line(aes(y = VWC_3, x = time), color = "darkblue") +
+#  scale_x_continuous(breaks = c(0, 0.1, 0.25, 0.5, 0.75, 1)) +
+  labs(y = "Soil water v/v ()", x = "Time") +
+  expand_limits(y = 0) ->
+soil_VWC_20cm.fig
+soil_VWC_20cm.fig
+```
+
+
+```{r}
+hour_2024_latest.tb |>
+  filter(time >= ymd_hms("2024-06-12 00:00:00")) |>
+  select(time, EC_1, EC_2, EC_3) |>
+  ggplot() +
+  geom_line(aes(y = EC_1, x = time), color = "red") +
+  geom_line(aes(y = EC_2, x = time)) +
+  geom_line(aes(y = EC_3, x = time), color = "darkblue") +
+    labs(y = "Bulk EC (dS/m)", x = "Time") -> 
+soil_t_50cm.fig
+soil_t_50cm.fig
+```

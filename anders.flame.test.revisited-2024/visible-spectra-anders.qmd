@@ -1,0 +1,966 @@
+---
+title: "Sunlight Dynamics at Kumpula and Gual Pahari"
+subtitle: "1. Visible Radiation, 2016-2017"
+author: "Pedro J. Aphalo"
+date: 2024-03-07
+date-modified: 2024-03-07
+format: 
+  html:
+    embed-resources: true
+code-fold: true
+code-tools: true
+---
+
+## Introduction
+
+This is a re-analysis of the visible (VIS) and near-infrared radiation (UVR) time
+series of spectral irradiance data from Kumpula, Helsinki, Finland, and from
+Gual Pahari, New Dehli, India. The measurements are all taken well above the
+vegetation and describe sunlight irradiance at the top of vegetation. Using
+two Flame spectrometers in cooled boxes at constant temperature, continuous
+measurements where done during 203 and 434 full days, at Kumpula and Gual Pahari,
+respectively.
+
+The aim is to describe the natural radiation environment to assess the spectral
+composition at a high frequency of measurement (1 min) over several months.
+Ratios between blue and green light, blue and red light and red and far-red
+light are important for plants.
+
+Daily fluence rate, or daily light integral (DLI), is also an important 
+determinant of plants responses.
+
+Although difficult to measure reliably, changes in the solar spectrum around
+sunset are especially important for plant responses, as has been demonstrated
+by experiments with end-of-day red- and far-red light treatments. The
+spectrometers measured day and night, but at very low light levels the
+effective dynamic range was drastically reduced. Thus spectra measured under
+conditions where the highest pixel signal was below 20% of the maximum counts
+rating of the detector were excluded from this analysis. In practice, this 
+means all night time and most twilight time measurements had to be excluded.
+
+## Set up
+
+```{r, message=FALSE}
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(ggpmisc)
+library(ggdensity)
+library(ggbeeswarm)
+library(patchwork)
+library(photobiology)
+library(photobiologyInOut)
+library(photobiologyWavebands)
+theme_set(theme_bw(14) + theme(legend.position = "bottom"))
+```
+
+
+
+Under clear sky conditions, the contribution of diffuse (= scattered) 
+radiation to total irradiance measured on a horizontal depends strongly on
+solar elevation. The proportion of diffuse radiation decreases most
+significantly at elevation angles less than 25 degrees. As we measured
+direct and diffuse PAR separately, comparing these measurements against
+the expected "floor" value under estimated for clear sky conditions, can
+inform about deviations caused by clouds and aerosols in the atmosphere.
+
+We used the Quick TUV calculator to estimate direct and diffuse spectral
+irradiance components for different solar elevation angles (zenith  angles in
+the TUV model) under clear-sky conditions. Simulations were done with different
+levels of aerosols in the atmosphere. A low level of aerosols of xxxx was
+selected for use in further calculations as a baseline for diffuse PAR fraction
+at different sun elevation angles. It must be remembered that scattering
+enhanced compared to the baseline level reflects the influence of both clouds
+and possibly higher levels of aerosols than used in the simulations. The
+simulation assumed 300 DU for ozone column, although this is of little
+relevance for estimations of PAR. The range of elevations was chosen based
+on the maximum solar elevation at Helsinki.
+
+We read the text files with the Quick TUV output obtained on-line using the
+interactive Quick-TUV calculator with R, that we use for all computations
+below. 
+
+# Load observed data from Kumpula 2017
+
+```{r, results='hide'}
+load("kumpula-all-summaries-calc-on-2018-03-01.rda")
+
+nrow(all_summaries.df)
+range(all_summaries.df$time)
+
+# rename to be able to use same code
+
+all_summaries.df |>
+  transmute(time = time,
+         solartime = solartime,
+         sun_elevation = elevation,
+         calendar_year = 2017,
+         day_of_year = yday(time),
+         month_of_year = month(time),
+         month_name = month.name[month_of_year],
+         PAR_umol = PAR.flame * 1e6,
+         blue_umol = blue.flame * 1e6,
+         green_umol = green.flame * 1e6,
+         red_umol = red.flame * 1e6,
+         far_red_umol = far.red.flame * 1e6,
+         UVAlw_umol = UVAlw.flame * 1e6,
+         B_G = B.G.flame * wl_expanse(Green("Sellaro")) / wl_expanse(Blue("Sellaro")),
+         B_R = B.R.flame * wl_expanse(Red("Sellaro")) / wl_expanse(Blue("Sellaro")),
+         R_FR = R.FR.flame,
+         saturation = rel.signal.flame) |>
+  subset(!is.na(PAR_umol) & 
+         sun_elevation >= -18 &
+         month_of_year >= 3 & month_of_year <= 11 &
+#           saturation > 0.2
+         PAR_umol > 1) |> # discard spectra with too low detector counts
+  mutate(month_name = factor(month_name, 
+                             levels = month.name[1:12])) -> minutes.df
+
+nrow(minutes.df)
+range(minutes.df$time)
+levels(minutes.df$month_name)
+
+```
+
+To characterize day-to-day variation, we compute summaries for each day. The accumulated daily irradiances or DLI are computed as well as lengths of time or durations of exposures to UV-B radiation above different irradiance thresholds are computed. We also compute day length using Meuss' algorithms.
+
+**We need to check for missing values to get the correct daily total, and skip those days when data are incomplete, or fill small gaps by interpolation!**
+
+```{r, results='hide', message=FALSE}
+viikki_bio3.geo <- data.frame(lon = 24.96082,
+                              lat = 60.20388,
+                              address = "BIO3, Viikki")
+
+longest.true.run <- function(x) {
+  if (any(x)) {
+    rl <- rle(x)
+    max(rl$lengths[rl$values])
+  } else {
+    0
+  }
+}
+
+minutes.df |>
+  group_by(day_of_year, month_of_year, calendar_year) |>
+  summarise(time = time[1],
+            PAR.DLI = sum(PAR_umol) * 1e-6 * 60,
+#            PAR10umol.hours = sum(PAR_umol > 10) / 60,
+            PAR30umol.hours = sum(PAR_umol > 30) / 60,
+            PAR100umol.hours = sum(PAR_umol > 100) / 60,
+            PAR300umol.hours = sum(PAR_umol > 300) / 60,
+            PAR1000umol.hours = sum(PAR_umol > 1000) / 60,
+#            PAR10umol.run.hours = longest.true.run(PAR_umol > 10) / 60,
+            PAR30umol.run.hours = longest.true.run(PAR_umol > 30) / 60,
+            PAR100umol.run.hours = longest.true.run(PAR_umol > 100) / 60,
+            PAR300umol.run.hours = longest.true.run(PAR_umol > 300) / 60,
+            PAR1000umol.run.hours = longest.true.run(PAR_umol > 1000) / 60,
+            n = n()) |>
+  ungroup() |>
+  mutate(day.length = day_length(time, geocode = viikki_bio3.geo),
+#         PAR10umol.time.rel = PAR10umol.hours / day.length,
+         PAR30umol.time.rel = PAR30umol.hours / day.length,
+         PAR100umol.time.rel = PAR100umol.hours / day.length,
+         PAR300umol.time.rel = PAR300umol.hours / day.length,
+         PAR1000umol.time.rel = PAR1000umol.hours / day.length,
+         month = ordered(month_of_year, 
+                        levels = 1:12, 
+                        labels = month.abb[1:12])) -> daily_PAR.tb
+daily_PAR.tb
+```
+We next reformat the daily summaries from wide to long shaped data frames to facilitate their plotting.
+
+```{r, results='hide'}
+daily_PAR.tb |>
+  select(day_of_year:calendar_year, month, PAR30umol.run.hours:PAR1000umol.run.hours, day.length) |>
+  pivot_longer(cols = PAR30umol.run.hours:PAR1000umol.run.hours,
+               names_to = "Threshold",
+               values_to = "Duration",
+               names_prefix = "PAR\\.|PAR") |>
+  mutate(Threshold = gsub("\\.run\\.hours$", "", Threshold),
+         #         Threshold = gsub("^5", "0.5", Threshold),
+         Threshold = gsub("umol", "", Threshold),
+         Threshold.units = paste("Q[PAR]>\"", 
+                                 format(as.numeric(Threshold), 
+                                        digits = 2, 
+                                        nsmall = 0, 
+                                        width = 0), 
+                                 "\"~mu*mol~m^{-2}~s^{-1}", sep = ""),
+         Threshold = factor(Threshold),
+         Threshold.units = factor(Threshold.units)) -> daily_PAR_run_max_long.tb
+
+levels(daily_PAR_run_max_long.tb$Threshold)
+daily_PAR_run_max_long.tb
+```
+
+```{r, results='hide'}
+daily_PAR.tb |>
+  select(day_of_year:calendar_year, month, PAR30umol.time.rel:PAR1000umol.time.rel, day.length) |>
+  pivot_longer(cols = PAR30umol.time.rel:PAR1000umol.time.rel,
+               names_to = "Threshold",
+               values_to = "Fraction",
+               names_prefix = "PAR\\.|PAR") |>
+  mutate(Threshold = gsub("\\.time\\.rel$", "", Threshold),
+         #         Threshold = gsub("^5", "0.5", Threshold),
+         Threshold = gsub("umol$", "", Threshold),
+         Threshold.units = paste("Q[PAR]>\"", 
+                                 format(as.numeric(Threshold), 
+                                        digits = 2, 
+                                        nsmall = 0, 
+                                        width = 0), 
+                                 "\"~mu*mol~m^{-2}~s^{-1}", sep = ""),
+         Threshold = factor(Threshold),
+         Threshold.units = factor(Threshold.units)) -> daily_PAR_time_rel_long.tb
+
+levels(daily_PAR_time_rel_long.tb$Threshold)
+daily_PAR_time_rel_long.tb
+```
+
+```{r, results='hide'}
+daily_PAR.tb |>
+  select(day_of_year:calendar_year, month, PAR30umol.hours:PAR1000umol.hours, day.length) |>
+  pivot_longer(cols = PAR30umol.hours:PAR1000umol.hours,
+               names_to = "Threshold",
+               values_to = "Duration",
+               names_prefix = "PAR\\.|PAR") |>
+  mutate(Threshold = gsub("\\.hours$", "", Threshold),
+         #         Threshold = gsub("^5", "0.5", Threshold),
+         Threshold = gsub("umol$", "", Threshold),
+         Threshold.units = paste("Q[PAR]>\"", 
+                                 format(as.numeric(Threshold), 
+                                        digits = 2, 
+                                        nsmall = 0, 
+                                        width = 0), 
+                                 "\"~mu*mol~m^{-2}~s^{-1}", sep = ""),
+         Threshold = factor(Threshold),
+         Threshold.units = factor(Threshold.units)) -> daily_PAR_hours_long.tb
+
+levels(daily_PAR_hours_long.tb$Threshold)
+daily_PAR_hours_long.tb
+```
+
+# PAR daily light integrals
+
+The PAR DLI estimates will be used as a reference in this analysis @fig-PAR-DLI. Even when plotted on logarithmic scale the distribution remains skewed with a concentration of high irradiance values and very long tail towards "dark" days. Given the large number of observations, estimates for the mean have narrow 99% confidence intervals, showing month-to-month variation on a smooth arc.
+
+```{r, warning=FALSE}
+#| label: fig-PAR-DLI
+#| echo: false
+#| fig-width: 7
+#| fig-asp: 0.7
+#| fig-cap: "Daily Light Integrals (DLI) for PAR. Computed from measurements 1 min means of measurements once every 5 s or 10 s. _Violins_ show the empirical probability density distributions, red dots and bars show show means 99% confidence intervals for the mean. Blue dots show the medians."
+
+PAR.DLI.fig <-
+ggplot(daily_PAR.tb, aes(month, PAR.DLI)) +
+  geom_violin(fill = "grey90") +
+  stat_summary(fun = "median", size = 0.3, colour = "cornflowerblue") +
+  stat_summary(fun.data = "mean_cl_boot", size = 0.3, linewidth = 0.7,
+               fun.args = list(conf.int=.99), colour = "red") +
+  stat_panel_counts() +
+  scale_y_log10(limits = c(0.2, NA), breaks = c(1, 2, 5, 10, 20, 50, 100)) +
+  expand_limits(y = 100) +
+  scale_x_discrete(drop = FALSE) +
+  labs(x = "Month", 
+       y = expression("PAR daily light integral  "*(mol~m^{-2}~d^{-1})))
+PAR.DLI.fig
+```
+## Daily duration of PAR exposure
+
+
+```{r, warning=FALSE}
+#| label: fig-PAR-hours
+#| echo: false
+#| fig-width: 7
+#| fig-asp: 1
+#| fig-cap: "Total time per day with PAR photon irradiance higher than different thersholds. Computed from 1 min means of measurements once every 5 s or 10 s. Red points and error bars are means and 99% confidence intervals for the mean; blue points are medians. The yellow columns show the length of the day."
+ggplot(daily_PAR_hours_long.tb, aes(month, Duration)) +
+  stat_summary(aes(y = day.length),
+               fun = "mean", geom = "col", alpha = 0.5, fill = "wheat") +
+  stat_panel_counts() +
+  geom_point(alpha = 0.15, position = position_jitter(width = 0.35)) +
+  stat_summary(fun = "median", linewidth = 1,
+               color = "cornflowerblue") +
+  stat_summary(fun.data = "mean_cl_boot", linewidth = 1,
+               fun.args = list(conf.int=.99), color = "red") +
+  scale_x_discrete(drop = FALSE) +
+  labs(x = "Month", 
+       y = "Time with PAR irradiance above threshold (h / d)") +
+  facet_wrap(facets = vars(Threshold.units), labeller = label_parsed) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+
+
+# Photon ratios
+
+```{r}
+kde_probs <- c(0.95, 0.85, 0.5)
+kde_caption <-  "Quantile polynomial regression: blue = median, green = quartiles" # ,\norange = 10% and 90% percentiles, red = 5% and 95% percentiles
+kde_labs <-  
+  labs(caption = kde_caption,
+      title = "Quantile regression and highest density regions",
+      subtitle = "Irradiance, 1 min means, for sun elevation > 0 degrees. 1 May to 30 October")
+quantile_poly_layers <- function(degree = 1) {
+  list(
+    stat_quantile(formula = y ~ poly(x, degree), 
+                  quantiles = 0.5,
+                  size = 0.75,
+                  color = "blue",
+                  method.args = list(method = "fn")),
+    stat_quantile(formula = y ~ poly(x, degree), 
+                  quantiles = c(0.25, 0.75),
+                  size = 0.75,
+                  color = "green",
+                  method.args = list(method = "fn"))#,
+    # stat_quantile(formula = y ~ poly(x, degree), 
+    #               quantiles = c(0.1, 0.9),
+    #               size = 0.75,
+    #               color = "orange",
+    #               method.args = list(method = "fn")),
+    # stat_quantile(formula = y ~ poly(x, degree), 
+    #               quantiles = c(0.05, 0.95),
+    #               size = 0.75,
+    #               color = "red",
+    #               method.args = list(method = "fn"))
+  )
+}
+
+quantile_bs_layers <- function(degree = 3, ...) {
+  list(
+    stat_quantile(formula = y ~ bs(x, degree = degree, ...), 
+                  quantiles = 0.5,
+                  size = 0.75,
+                  color = "blue",
+                  method.args = list(method = "sfn")),
+    stat_quantile(formula = y ~ bs(x, degree = degree, ...), 
+                  quantiles = c(0.25, 0.75),
+                  size = 0.75,
+                  color = "green",
+                  method.args = list(method = "sfn")) #,
+    # stat_quantile(formula = y ~ bs(x, degree = degree, ...), 
+    #               quantiles = c(0.1, 0.9),
+    #               size = 0.75,
+    #               color = "orange",
+    #               method.args = list(method = "sfn")),
+    # stat_quantile(formula = y ~ bs(x, degree = degree, ...), 
+    #               quantiles = c(0.05, 0.95),
+    #               size = 0.75,
+    #               color = "red",
+    #               method.args = list(method = "sfn"))
+  )
+}
+
+# quantile_layers <- quantile_bs_layers
+quantile_layers <- quantile_poly_layers
+```
+
+
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, PAR_umol) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, PAR_umol)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "PAR irradiance") +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  scale_y_continuous() +
+  coord_cartesian(ylim = c(-50, 2000)) +
+  expand_limits(x = c(-20, 60), y = -100) -> par_sun_elev_loess.fig
+par_sun_elev_loess.fig
+```
+
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, red_umol) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, red_umol)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "Red photon irradiance") +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  scale_y_continuous() +
+  coord_cartesian(ylim = c(-5, 70)) +
+  expand_limits(x = c(-20, 60), y = -5) -> red_sun_elev_loess.fig
+red_sun_elev_loess.fig
+```
+
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, saturation) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, saturation)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "Detector relative saturation") +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  scale_y_continuous() +
+  coord_cartesian(ylim = c(-0.5, 1)) +
+  expand_limits(x = c(-20, 60), y = -0.05) -> red_sun_elev_loess.fig
+red_sun_elev_loess.fig
+```
+
+
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, R_FR) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, R_FR)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+  geom_hline(yintercept = 1.16,  linetype = "dashed", color = "red") +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "R:FR, spectral irradiance ratio") +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  scale_y_continuous(breaks = c(0.5, 1.0, 1.5), limits = c(0.2, 3.5)) +
+  coord_cartesian(ylim = c(0.2, 1.75)) +
+  expand_limits(x = c(-20, 60)) -> rfr_sun_elev_loess.fig
+rfr_sun_elev_loess.fig
+```
+
+
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, B_R) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, B_R)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+#  geom_hline(yintercept = 1.16,  linetype = "dashed", color = "red") +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "B:R, spectral irradiance ratio") +
+  ylim(0.1, 20) +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  coord_cartesian(ylim = c(-0.1, 4)) +
+  expand_limits(x = c(-20, 60)) -> blue_red_sun_elev_loess.fig
+blue_red_sun_elev_loess.fig
+```
+
+
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, B_G) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, B_G)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+#  geom_hline(yintercept = 1.16,  linetype = "dashed", color = "red") +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "B:G, spectral irradiance ratio") +
+  ylim(0.1, 20) +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  coord_cartesian(ylim = c(0.2, 2.5)) +
+  expand_limits(x = c(-20, 60)) -> blue_green_sun_elev_loess.fig
+blue_green_sun_elev_loess.fig
+```
+
+
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, R_FR) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, R_FR)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+#  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+  geom_hline(yintercept = 1.16,  linetype = "dashed", color = "red") +
+  stat_quant_band(formula = y ~ poly(x, 6), 
+                  alpha = 0.2,
+                  quantiles = c(0.025, 0.5, 0.975),
+                  method.args = list(method = "fn")) +
+  stat_quant_band(formula = y ~ poly(x, 6), 
+                  method.args = list(method = "fn")) +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "R:FR, spectral photon irradiance ratio") +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  scale_y_continuous(breaks = c(0.5, 1.0, 1.5), limits = c(0.2, 3.5)) +
+  coord_cartesian(ylim = c(0.5, 1.75)) +
+  scale_x_continuous(breaks = c(0, 15, 30, 45, 60, 75, 90)) +
+  expand_limits(x = c(-7.5, 90)) -> viikki_rfr_sun_elev_quant.fig
+viikki_rfr_sun_elev_quant.fig
+```
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, B_R) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, B_R)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+#  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+#  geom_hline(yintercept = 1.16,  linetype = "dashed", color = "red") +
+  stat_quant_band(formula = y ~ poly(x, 6), 
+                  alpha = 0.2,
+                  quantiles = c(0.025, 0.5, 0.975),
+                  method.args = list(method = "fn")) +
+  stat_quant_band(formula = y ~ poly(x, 6), 
+                  method.args = list(method = "fn")) +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "B:R, spectral photon irradiance ratio") +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  scale_y_continuous(breaks = c(0.5, 1.0, 1.5, 2), limits = c(0.2, 5)) +
+  coord_cartesian(ylim = c(0.5, 2.5)) +
+  scale_x_continuous(breaks = c(0, 15, 30, 45, 60, 75, 90)) +
+  expand_limits(x = c(-7.5, 90)) -> viikki_br_sun_elev_quant.fig
+viikki_br_sun_elev_quant.fig
+```
+
+
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, B_G) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, B_G)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+#  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+#  geom_hline(yintercept = 1.16,  linetype = "dashed", color = "red") +
+  stat_quant_band(formula = y ~ poly(x, 6), 
+                  alpha = 0.2,
+                  quantiles = c(0.025, 0.5, 0.975),
+                  method.args = list(method = "fn")) +
+  stat_quant_band(formula = y ~ poly(x, 6), 
+                  method.args = list(method = "fn")) +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "B:G, spectral photon irradiance ratio") +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  scale_y_continuous(breaks = c(0.5, 1.0, 1.5), limits = c(0.2, 3.5)) +
+  coord_cartesian(ylim = c(0.5, 1.75)) +
+  scale_x_continuous(breaks = c(0, 15, 30, 45, 60, 75, 90)) +
+  expand_limits(x = c(-7.5, 90)) -> viikki_bg_sun_elev_quant.fig
+viikki_bg_sun_elev_quant.fig
+```
+
+# Load observed data from Gual Pahari 2017-2018
+
+
+```{r, results='hide'}
+load("gual-pajari-all-summaries-calc-on-2018-03-11.rda")
+
+nrow(combined_summaries.df)
+range(combined_summaries.df$time, na.rm = TRUE)
+
+# rename to be able to use same code
+
+combined_summaries.df |>
+  transmute(time = time,
+         solartime = solartime,
+         sun_elevation = elevation,
+         calendar_year = year(time),
+         day_of_year = yday(time),
+         month_of_year = month(time),
+         month_name = month.name[month_of_year],
+         PAR_umol = PAR.flame * 1e6,
+         blue_umol = blue.flame * 1e6,
+         green_umol = green.flame * 1e6,
+         red_umol = red.flame * 1e6,
+         far_red_umol = far.red.flame * 1e6,
+         UVAlw_umol = UVAlw.flame * 1e6,
+         B_G = B.G.flame * wl_expanse(Green("Sellaro")) / wl_expanse(Blue("Sellaro")),
+         B_R = B.R.flame * wl_expanse(Red("Sellaro")) / wl_expanse(Blue("Sellaro")),
+         R_FR = R.FR.flame,
+         saturation = rel.signal.flame) |>
+  subset(!is.na(PAR_umol) & 
+         sun_elevation >= -18 &
+           !is.na(time) &
+#           saturation > 0.2
+         PAR_umol > 1) |> # discard spectra with too low detector counts
+  mutate(month_name = factor(month_name, 
+                             levels = month.name[1:12])) -> minutes.df
+
+nrow(minutes.df)
+range(minutes.df$time)
+levels(minutes.df$month_name)
+unique(minutes.df$month_name)
+anyNA(minutes.df$month_name)
+anyNA(minutes.df$time)
+```
+
+To characterize day-to-day variation, we compute summaries for each day. The accumulated daily irradiances or DLI are computed as well as lengths of time or durations of exposures to UV-B radiation above different irradiance thresholds are computed. We also compute day length using Meuss' algorithms.
+
+**We need to check for missing values to get the correct daily total, and skip those days when data are incomplete, or fill small gaps by interpolation!**
+
+```{r, results='hide', message=FALSE}
+gual_pahari.geo <- data.frame(lon = 77.1465,
+                              lat = 28.42633,
+                              address = "Gual Pahari")
+
+longest.true.run <- function(x) {
+  if (any(x)) {
+    rl <- rle(x)
+    max(rl$lengths[rl$values])
+  } else {
+    0
+  }
+}
+
+minutes.df |>
+  group_by(day_of_year, month_of_year, calendar_year) |>
+  summarise(time = time[1],
+            PAR.DLI = sum(PAR_umol) * 1e-6 * 60,
+#            PAR10umol.hours = sum(PAR_umol > 10) / 60,
+            PAR30umol.hours = sum(PAR_umol > 30) / 60,
+            PAR100umol.hours = sum(PAR_umol > 100) / 60,
+            PAR300umol.hours = sum(PAR_umol > 300) / 60,
+            PAR1000umol.hours = sum(PAR_umol > 1000) / 60,
+#            PAR10umol.run.hours = longest.true.run(PAR_umol > 10) / 60,
+            PAR30umol.run.hours = longest.true.run(PAR_umol > 30) / 60,
+            PAR100umol.run.hours = longest.true.run(PAR_umol > 100) / 60,
+            PAR300umol.run.hours = longest.true.run(PAR_umol > 300) / 60,
+            PAR1000umol.run.hours = longest.true.run(PAR_umol > 1000) / 60,
+            n = n()) |>
+  ungroup() |>
+  mutate(day.length = day_length(time, geocode = gual_pahari.geo),
+#         PAR10umol.time.rel = PAR10umol.hours / day.length,
+         PAR30umol.time.rel = PAR30umol.hours / day.length,
+         PAR100umol.time.rel = PAR100umol.hours / day.length,
+         PAR300umol.time.rel = PAR300umol.hours / day.length,
+         PAR1000umol.time.rel = PAR1000umol.hours / day.length,
+         month = ordered(month_of_year, 
+                        levels = 1:12, 
+                        labels = month.abb[1:12])) -> daily_PAR.tb
+daily_PAR.tb
+```
+We next reformat the daily summaries from wide to long shaped data frames to facilitate their plotting.
+
+```{r, results='hide'}
+daily_PAR.tb |>
+  select(day_of_year:calendar_year, month, PAR30umol.run.hours:PAR1000umol.run.hours, day.length) |>
+  pivot_longer(cols = PAR30umol.run.hours:PAR1000umol.run.hours,
+               names_to = "Threshold",
+               values_to = "Duration",
+               names_prefix = "PAR\\.|PAR") |>
+  mutate(Threshold = gsub("\\.run\\.hours$", "", Threshold),
+         #         Threshold = gsub("^5", "0.5", Threshold),
+         Threshold = gsub("umol", "", Threshold),
+         Threshold.units = paste("Q[PAR]>\"", 
+                                 format(as.numeric(Threshold), 
+                                        digits = 2, 
+                                        nsmall = 0, 
+                                        width = 0), 
+                                 "\"~mu*mol~m^{-2}~s^{-1}", sep = ""),
+         Threshold = factor(Threshold),
+         Threshold.units = factor(Threshold.units)) -> daily_PAR_run_max_long.tb
+
+levels(daily_PAR_run_max_long.tb$Threshold)
+daily_PAR_run_max_long.tb
+```
+
+```{r, results='hide'}
+daily_PAR.tb |>
+  select(day_of_year:calendar_year, month, PAR30umol.time.rel:PAR1000umol.time.rel, day.length) |>
+  pivot_longer(cols = PAR30umol.time.rel:PAR1000umol.time.rel,
+               names_to = "Threshold",
+               values_to = "Fraction",
+               names_prefix = "PAR\\.|PAR") |>
+  mutate(Threshold = gsub("\\.time\\.rel$", "", Threshold),
+         #         Threshold = gsub("^5", "0.5", Threshold),
+         Threshold = gsub("umol$", "", Threshold),
+         Threshold.units = paste("Q[PAR]>\"", 
+                                 format(as.numeric(Threshold), 
+                                        digits = 2, 
+                                        nsmall = 0, 
+                                        width = 0), 
+                                 "\"~mu*mol~m^{-2}~s^{-1}", sep = ""),
+         Threshold = factor(Threshold),
+         Threshold.units = factor(Threshold.units)) -> daily_PAR_time_rel_long.tb
+
+levels(daily_PAR_time_rel_long.tb$Threshold)
+daily_PAR_time_rel_long.tb
+```
+
+```{r, results='hide'}
+daily_PAR.tb |>
+  select(day_of_year:calendar_year, month, PAR30umol.hours:PAR1000umol.hours, day.length) |>
+  pivot_longer(cols = PAR30umol.hours:PAR1000umol.hours,
+               names_to = "Threshold",
+               values_to = "Duration",
+               names_prefix = "PAR\\.|PAR") |>
+  mutate(Threshold = gsub("\\.hours$", "", Threshold),
+         #         Threshold = gsub("^5", "0.5", Threshold),
+         Threshold = gsub("umol$", "", Threshold),
+         Threshold.units = paste("Q[PAR]>\"", 
+                                 format(as.numeric(Threshold), 
+                                        digits = 2, 
+                                        nsmall = 0, 
+                                        width = 0), 
+                                 "\"~mu*mol~m^{-2}~s^{-1}", sep = ""),
+         Threshold = factor(Threshold),
+         Threshold.units = factor(Threshold.units)) -> daily_PAR_hours_long.tb
+
+levels(daily_PAR_hours_long.tb$Threshold)
+daily_PAR_hours_long.tb
+```
+
+# PAR daily light integrals
+
+The PAR DLI estimates will be used as a reference in this analysis @fig-PAR-DLI. Even when plotted on logarithmic scale the distribution remains skewed with a concentration of high irradiance values and very long tail towards "dark" days. Given the large number of observations, estimates for the mean have narrow 99% confidence intervals, showing month-to-month variation on a smooth arc.
+
+```{r, warning=FALSE}
+#| label: fig-PAR-DLI-gual
+#| echo: false
+#| fig-width: 7
+#| fig-asp: 0.7
+#| fig-cap: "Daily Light Integrals (DLI) for PAR. Computed from measurements 1 min means of measurements once every 5 s or 10 s. _Violins_ show the empirical probability density distributions, red dots and bars show show means 99% confidence intervals for the mean. Blue dots show the medians."
+
+PAR.DLI.fig <-
+ggplot(daily_PAR.tb, aes(month, PAR.DLI)) +
+  geom_violin(fill = "grey90") +
+  stat_summary(fun = "median", size = 0.3, colour = "cornflowerblue") +
+  stat_summary(fun.data = "mean_cl_boot", size = 0.3, linewidth = 0.7,
+               fun.args = list(conf.int=.99), colour = "red") +
+  stat_panel_counts() +
+  scale_y_log10(limits = c(0.2, NA), breaks = c(1, 2, 5, 10, 20, 50, 100)) +
+  expand_limits(y = 100) +
+  labs(x = "Month", 
+       y = expression("PAR daily light integral  "*(mol~m^{-2}~d^{-1})))
+PAR.DLI.fig
+```
+## Daily duration of PAR exposure
+
+
+```{r, warning=FALSE}
+#| label: fig-PAR-hours-gual
+#| echo: false
+#| fig-width: 7
+#| fig-asp: 1
+#| fig-cap: "Total time per day with PAR photon irradiance higher than different thersholds. Computed from 1 min means of measurements once every 5 s or 10 s. Red points and error bars are means and 99% confidence intervals for the mean; blue points are medians. The yellow columns show the length of the day."
+ggplot(daily_PAR_hours_long.tb, aes(month, Duration)) +
+  stat_summary(aes(y = day.length),
+               fun = "mean", geom = "col", alpha = 0.5, fill = "wheat") +
+  stat_panel_counts() +
+  geom_point(alpha = 0.15, position = position_jitter(width = 0.35)) +
+  stat_summary(fun = "median", linewidth = 1,
+               color = "cornflowerblue") +
+  stat_summary(fun.data = "mean_cl_boot", linewidth = 1,
+               fun.args = list(conf.int=.99), color = "red") +
+  labs(x = "Month", 
+       y = "Time with PAR irradiance above threshold (h / d)") +
+  facet_wrap(facets = vars(Threshold.units), labeller = label_parsed) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+
+
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, saturation) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, saturation)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "Detector relative saturation") +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  scale_y_continuous() +
+  coord_cartesian(ylim = c(-0.5, 1)) +
+  expand_limits(x = c(-20, 60), y = -0.05) -> red_sun_elev_loess.fig
+red_sun_elev_loess.fig
+```
+
+# Photon ratios
+
+
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, R_FR) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, R_FR)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+  geom_hline(yintercept = 1.16,  linetype = "dashed", color = "red") +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "R:FR, spectral irradiance ratio") +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  scale_y_continuous(breaks = c(0.5, 1.0, 1.5), limits = c(0.2, 3.5)) +
+  coord_cartesian(ylim = c(0.2, 1.75)) +
+  expand_limits(x = c(-20, 60)) -> rfr_sun_elev_loess.fig
+rfr_sun_elev_loess.fig
+```
+
+
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, B_R) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, B_R)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+#  geom_hline(yintercept = 1.16,  linetype = "dashed", color = "red") +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "B:R, spectral irradiance ratio") +
+  ylim(0.1, 20) +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  coord_cartesian(ylim = c(0.2, 2)) +
+  expand_limits(x = c(-20, 60)) -> blue_red_sun_elev_loess.fig
+blue_red_sun_elev_loess.fig
+```
+
+
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, B_G) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, B_G)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+#  geom_hline(yintercept = 1.16,  linetype = "dashed", color = "red") +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "B:G, spectral irradiance ratio") +
+  ylim(0.1, 20) +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  coord_cartesian(ylim = c(0.2, 2.5)) +
+  expand_limits(x = c(-20, 60)) -> blue_green_sun_elev_loess.fig
+blue_green_sun_elev_loess.fig
+```
+
+
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, R_FR) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, R_FR)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+#  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+  geom_hline(yintercept = 1.16,  linetype = "dashed", color = "red") +
+  stat_quant_band(formula = y ~ poly(x, 6), 
+                  alpha = 0.2,
+                  quantiles = c(0.025, 0.5, 0.975),
+                  method.args = list(method = "fn")) +
+  stat_quant_band(formula = y ~ poly(x, 6), 
+                  method.args = list(method = "fn")) +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "R:FR, spectral photon irradiance ratio") +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  scale_y_continuous(breaks = c(0.5, 1.0, 1.5), limits = c(0.2, 3.5)) +
+  coord_cartesian(ylim = c(0.75, 1.75)) +
+  scale_x_continuous(breaks = c(0, 15, 30, 45, 60, 75, 90)) +
+  expand_limits(x = c(-7.5, 90)) -> gual_pahari_rfr_sun_elev_quant.fig
+gual_pahari_rfr_sun_elev_quant.fig
+```
+
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, B_R) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, B_R)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+#  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+#  geom_hline(yintercept = 1.16,  linetype = "dashed", color = "red") +
+  stat_quant_band(formula = y ~ poly(x, 6), 
+                  alpha = 0.2,
+                  quantiles = c(0.025, 0.5, 0.975),
+                  method.args = list(method = "fn")) +
+  stat_quant_band(formula = y ~ poly(x, 6), 
+                  method.args = list(method = "fn")) +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "B:R, spectral photon irradiance ratio") +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  scale_y_continuous(breaks = c(0.5, 1.0, 1.5, 2), limits = c(0.2, 3.5)) +
+  coord_cartesian(ylim = c(0.5, 2.5)) +
+  scale_x_continuous(breaks = c(0, 15, 30, 45, 60, 75, 90)) +
+  expand_limits(x = c(-7.5, 90)) -> gual_pahari_br_sun_elev_quant.fig
+gual_pahari_br_sun_elev_quant.fig
+```
+
+
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, B_G) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, B_G)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+#  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+#  geom_hline(yintercept = 1.16,  linetype = "dashed", color = "red") +
+  stat_quant_band(formula = y ~ poly(x, 6), 
+                  alpha = 0.2,
+                  quantiles = c(0.025, 0.5, 0.975),
+                  method.args = list(method = "fn")) +
+  stat_quant_band(formula = y ~ poly(x, 6), 
+                  method.args = list(method = "fn")) +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "B:G, spectral photon irradiance ratio") +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  scale_y_continuous(breaks = c(0.5, 1.0, 1.5), limits = c(0.2, 3.5)) +
+  coord_cartesian(ylim = c(0.5, 1.75)) +
+  scale_x_continuous(breaks = c(0, 15, 30, 45, 60, 75, 90)) +
+  expand_limits(x = c(-7.5, 90)) -> gual_pahari_bg_sun_elev_quant.fig
+gual_pahari_bg_sun_elev_quant.fig
+```
+
+# Combined plots
+
+```{r, warning=FALSE}
+rfr_elev_quant.fig <-
+  viikki_rfr_sun_elev_quant.fig / gual_pahari_rfr_sun_elev_quant.fig + plot_layout(axes = "collect")
+rfr_elev_quant.fig
+
+```
+
+
+```{r, warning=FALSE}
+br_elev_quant.fig <-
+  viikki_br_sun_elev_quant.fig / gual_pahari_br_sun_elev_quant.fig + plot_layout(axes = "collect")
+br_elev_quant.fig
+```
+
+
+```{r, warning=FALSE}
+bg_elev_quant.fig <- 
+  viikki_bg_sun_elev_quant.fig / gual_pahari_bg_sun_elev_quant.fig + plot_layout(axes = "collect")
+bg_elev_quant.fig
+```
+
+```{r}
+pdf("ratios-elev.pdf", width = 7, height = 6)
+print(rfr_elev_quant.fig)
+print(br_elev_quant.fig)
+print(bg_elev_quant.fig)
+dev.off()
+
+```
+

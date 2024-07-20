@@ -1,0 +1,125 @@
+---
+title: "Read data from Viikki field weather station"
+subtitle: "Minute-interval logging with Campbell Scientific CR6"
+author: "Pedro J. Aphalo"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(tidy = FALSE, echo = TRUE)
+```
+
+# WXT200 replaced by WXT356 on 
+
+The WXT200 was functioning but re-calibration was no longer possible as it had been discontinued and replaced by the WXT300 series. The new weather sensor is very similar to the old one, but is configured with a heating element, that was not installed in the old WXT200.
+
+# Power loss on 2021-12-09
+
+The voltage from the battery to the logger went well below 12 V causing it to stop logging for several hours. It recovered by itself, but the Optris surface temperature sensors failed to self recalibrate/re-zero and readings remained bad until power to them was cycled on 2022-06-22.
+
+# Logger battery replaced on 2022-08-2x
+
+Same type as original used for replacement. We lost several night's worth of data
+because I disconnected the mains power as I suspected that the MeanWell power supply 
+was disturbing the data acquisition. As the battery did not hold the charge from
+the solar panel, no night-time data was collected. This was before the WXT536's
+problem was fixed.
+
+# Updates on 2022-08-22
+
+The WXT356 communication was intermittently failing and wrong air temperature values were being received by the logger. As only 1 min means were logged, the means for some minutes were too low, as detected after starting to log also the maximum and minimum value for each minute, which continues in the updated protocol. For diagnosing the problem a table sampling readings once every 5 s was used for several days, and showed skipped temperature readings. Vaisala support provided a more recent firmware (version 3.86) for the WXT356 that solved the problem. Anyway, following their recommendation the frequency of queries to the WXT356 was decreased from 5 s to 10 s. The settings in the WXT356 were changed so that it returns status information in the composite message. 
+
+The CRBASIC program in the logger was also updated to use IEEE4 format for all variables, not just some. The soil sensors are now read 5 times per hour instead of once per hour, and readings averaged. For more variables maximum and minimum and SD are now computed in the logger. The code for additional CS655 sensors (4 to 9) was deleted. 
+
+This R script was also updated to match. This included a fix to time shift computations.
+
+# Heating connected on 2022-11-03
+
+A 12 V power supply (separate from that powering the logger) was wired to WXT356, the BF-5 sensor and to the resistor below the support of the sglux sensors. The sglux sensors most likely will require additional heating.
+
+# Merge script updated on 2022-11-23/24
+
+New version attempts to filter out the bad temperature data using deviations of individual 1 min means from the running median.
+
+# FMI data script updated on 2022-11-23/24
+
+Plots attempts to validate the filtering of bad readings by plotting. Merges the
+FMI data from Kumpula.
+
+# Rewrite for new logger program on 2024-06-09
+
+# Import and preprocessing of the data logged at 1 min intervals
+
+```{r}
+library(readr)
+library(lubridate)
+library(photobiology)
+library(photobiologyInOut)
+library(dplyr)
+```
+
+We read the minute interval data for whole periods. When dowloading data from the logger we append it to the file. A new file is started when the data tables change. This happens when the CRBASIC program in the logger is editted in a way that changes the data that are logged.
+
+```{r}
+minute_raw.tb <- read_csi_dat(file = "data-latest/Viikki Tower_TableMinute.dat", locale = locale_UTC)
+
+minute_raw.tb
+nrow(minute_raw.tb)
+ncol(minute_raw.tb)
+```
+
+```{r}
+colnames(minute_raw.tb)
+```
+
+```{r}
+cat(comment(minute_raw.tb))
+```
+
+Sometimes after changes in the logger program data already downloaded has been
+appended to files, leading to duplicate rows.
+```{r}
+rle.check <- rle(sort(as.numeric(minute_raw.tb$TIMESTAMP)))
+duplicates <- sum(rle.check$lengths > 1)
+if (duplicates > 0L) {
+  message("Found ", duplicates, " duplicated rows in data.")
+  minute_raw.tb <- distinct(minute_raw.tb, TIMESTAMP, .keep_all = TRUE)
+}
+```
+
+TIMESTAMP values are as logged. Logger clock has been most of the time with no more a couple of seconds shift UTC +2:00 h following FMI practice and thus logged daily values are consistent year-round.
+
+```{r}
+minute_raw.tb[["TIMESTAMP"]][1]
+minute_raw.tb[["TIMESTAMP"]][nrow(minute_raw.tb)]
+tz(minute_raw.tb[["TIMESTAMP"]][1])
+minute_raw.tb[["TIMESTAMP"]] <-  minute_raw.tb[["TIMESTAMP"]] - hours(2) # EET -> UTC
+
+minute_raw.tb[["TIMESTAMP"]][1]
+minute_raw.tb[["TIMESTAMP"]][nrow(minute_raw.tb)]
+tz(minute_raw.tb[["TIMESTAMP"]][1])
+```
+
+```{r}
+load("data-rda/minute_calc_2024_5_14.tb.rda")
+names(minute_raw.tb) <- gsub("_Avg$", "", names(minute_raw.tb))
+minute.tb <- full_join(minute_calc_2024_5_14.tb, minute_raw.tb, by = c("time.minute" = "TIMESTAMP"))
+colnames(minute.tb)
+```
+
+```{r}
+obj.name <- paste("minute_", year(minute_raw.tb$TIMESTAMP[1]),
+                  "_", month(minute_raw.tb$TIMESTAMP[1]), ".tb", sep = "")
+assign(obj.name, minute.tb)
+
+save(list = obj.name, file = paste("data-rda/", obj.name, ".rda", sep = ""))
+```
+
+
+```{r}
+minute.tb %>%
+  head()
+minute.tb %>%
+  tail()
+```

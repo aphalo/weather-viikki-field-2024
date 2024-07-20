@@ -1,0 +1,661 @@
+'CR6 Series Datalogger + ADM116
+' WXT520 + CMP3 + LI190 + CS + sglux + BF5 + 107 + SKR110 + SoilView + SC650
+' for OEB/SenPEP weather station in Viikki
+' Neha's experiment 2015 Medicago truncatula
+' date: 2020-05-06
+' Revised: 
+' Saving data to SD card
+' Revisions in 2020 and 2021
+' 2022-08-21
+' Add code to diagnose WXT problems
+' TableFiveSec added
+' Needs WXT profile from this same day with enabled supply voltages in
+' the composite message
+' 2022-09-05
+' WXT profile changed from 5 s to 10 s updates
+' 2022-09-08
+' Change WXT polling frequency from 5 s to 10 s
+' Delete TableFiveSec
+' 2024-04-12
+' Add TableFiveSec for irradiance
+' program author: Pedro J. Aphalo
+' 2024-04-15
+' Increase notch frequency from 50 Hz to 500 Hz
+' This shortens the averaging time for each reading from 200 ms to 20 ms
+' making possible faster measurements.
+' Set time step to 1 s
+' 2024-04-24
+' Delete Table DayTable as we are logging all raw data
+' hopefully this will free processing capacity
+' set some off-range settling times to default of 500 us
+' use Autorange instead of _mV5000 for Delta-T BF5
+' 2024-05-10
+' Set time step of main program to 100 ms (aiming later at 20 ms)
+' Set time step of TableSecond to 500 ms
+' Add a second slow sequence with time step 10 s
+' Move WXT and Optris and CS 107 to this table
+' Add TableMilliSecond logging only PAR at 100 ms (aiming later at 20 ms)
+' Delete code for computing log10 of irradiances as these were use only
+' in TableDay that was deleted on 2024-04-24
+' 2024-05-10
+' The previous edit to the program did not work
+' Undid the addition of the second slow table
+'
+'Declare Public Variables
+'Self monitoring:
+Public PTemp_C
+Public BattV
+Units PTemp_C=Celsius
+Units BattV=Volts
+Public CDM1BattV
+Public LowPowerCounts
+Alias LowPowerCounts=Satus.Low12VCount
+'Public CDMPTemp_C
+Units CDM1BattV=Volts
+'Units CDMPTemp_C=Celsius
+'PAR LI-190:
+Public PAR_Den
+Units PAR_Den=µmol/s/m²
+'PAR CS-310:
+Public PAR_Den_CS
+Units PAR_Den_CS=µmol/s/m²
+'PAR BF5:
+Public PAR_BF_tot
+Public PAR_BF_diff
+Units PAR_BF_tot=µmol/s/m²
+Units PAR_BF_diff=µmol/s/m²
+'Global radiation Kipp CMPT3
+Public Solar_irrad
+Units Solar_irrad=W/m²
+'R:FR SKR110 (uncalibrated + calibrated)
+Public Red_Den
+Public Far_red_Den
+Units Red_Den=mV
+Units Far_red_Den=mV
+Public Red_Den_cal
+Public Far_red_Den_cal
+Units Red_Den_cal=µmol/s/m²
+Units Far_red_Den_cal=µmol/s/m²
+Public RFR_rat
+Units RFR_rat=mol/mol
+'sglux UVB, UVA and Blue (uncalibrated)
+Public Blue_Den
+Units Blue_Den=mV
+Public UVA_Den
+Units UVA_Den=mV
+Public UVB_Den
+Units UVB_Den=mV
+'Weather:
+Public AirDewPoint
+Public SDI12(9)
+Alias SDI12(1)=WindDir
+Alias SDI12(2)=WindSpd
+Alias SDI12(3)=AirTemp
+Alias SDI12(4)=RelHumidity
+Alias SDI12(5)=AirPressure
+Alias SDI12(6)=Ramount
+Alias SDI12(7)=Hamount
+Alias SDI12(8)=SupplyVoltage
+Alias SDI12(9)=ReferenceVoltage
+Units WindDir=Degrees
+Units WindSpd=m/s
+Units AirTemp=Celsius
+Units RelHumidity=%
+Units AirPressure=hPa
+Units Ramount=mm
+Units Hamount=hits/cm2
+Units SupplyVoltage=V
+Units ReferenceVoltage=V
+'107 Thermistors Temperature 
+Public T107_C(4)
+Units T107_C=Celsius
+'CS65 Soil water + temperature + conductivity
+'Declare Variables and Units
+Public CS65X_1(3)
+Public CS65X_2(3)
+Public CS65X_3(3)
+
+Alias CS65X_1(1)=VWC_1
+Alias CS65X_1(2)=EC_1
+Alias CS65X_1(3)=T_1
+Alias CS65X_2(1)=VWC_2
+Alias CS65X_2(2)=EC_2
+Alias CS65X_2(3)=T_2
+Alias CS65X_3(1)=VWC_3
+Alias CS65X_3(2)=EC_3
+Alias CS65X_3(3)=T_3
+
+Units VWC_1=m^3/m^3
+Units EC_1=dS/m
+Units T_1=Celsius
+Units VWC_2=m^3/m^3
+Units EC_2=dS/m
+Units T_2=Celsius
+Units VWC_3=m^3/m^3
+Units EC_3=dS/m
+Units T_3=Celsius
+
+' SoilVue10 x 3
+Public SoilVUE_5cm_1(4)
+Public SoilVUE_10cm_1(4)
+Public SoilVUE_20cm_1(4)
+Public SoilVUE_30cm_1(4)
+Public SoilVUE_40cm_1(4)
+Public SoilVUE_50cm_1(4)
+Public SoilVUE_5cm_2(4)
+Public SoilVUE_10cm_2(4)
+Public SoilVUE_20cm_2(4)
+Public SoilVUE_30cm_2(4)
+Public SoilVUE_40cm_2(4)
+Public SoilVUE_50cm_2(4)
+Public SoilVUE_5cm_3(4)
+Public SoilVUE_10cm_3(4)
+Public SoilVUE_20cm_3(4)
+Public SoilVUE_30cm_3(4)
+Public SoilVUE_40cm_3(4)
+Public SoilVUE_50cm_3(4)
+
+Alias SoilVUE_5cm_1(1)=VWC_5cm_1
+Alias SoilVUE_5cm_1(2)=Ka_5cm_1
+Alias SoilVUE_5cm_1(3)=T_5cm_1
+Alias SoilVUE_5cm_1(4)=BulkEC_5cm_1
+Alias SoilVUE_10cm_1(1)=VWC_10cm_1
+Alias SoilVUE_10cm_1(2)=Ka_10cm_1
+Alias SoilVUE_10cm_1(3)=T_10cm_1
+Alias SoilVUE_10cm_1(4)=BulkEC_10cm_1
+Alias SoilVUE_20cm_1(1)=VWC_20cm_1
+Alias SoilVUE_20cm_1(2)=Ka_20cm_1
+Alias SoilVUE_20cm_1(3)=T_20cm_1
+Alias SoilVUE_20cm_1(4)=BulkEC_20cm_1
+Alias SoilVUE_30cm_1(1)=VWC_30cm_1
+Alias SoilVUE_30cm_1(2)=Ka_30cm_1
+Alias SoilVUE_30cm_1(3)=T_30cm_1
+Alias SoilVUE_30cm_1(4)=BulkEC_30cm_1
+Alias SoilVUE_40cm_1(1)=VWC_40cm_1
+Alias SoilVUE_40cm_1(2)=Ka_40cm_1
+Alias SoilVUE_40cm_1(3)=T_40cm_1
+Alias SoilVUE_40cm_1(4)=BulkEC_40cm_1
+Alias SoilVUE_50cm_1(1)=VWC_50cm_1
+Alias SoilVUE_50cm_1(2)=Ka_50cm_1
+Alias SoilVUE_50cm_1(3)=T_50cm_1
+Alias SoilVUE_50cm_1(4)=BulkEC_50cm_1
+Alias SoilVUE_5cm_2(1)=VWC_5cm_2
+Alias SoilVUE_5cm_2(2)=Ka_5cm_2
+Alias SoilVUE_5cm_2(3)=T_5cm_2
+Alias SoilVUE_5cm_2(4)=BulkEC_5cm_2
+Alias SoilVUE_10cm_2(1)=VWC_10cm_2
+Alias SoilVUE_10cm_2(2)=Ka_10cm_2
+Alias SoilVUE_10cm_2(3)=T_10cm_2
+Alias SoilVUE_10cm_2(4)=BulkEC_10cm_2
+Alias SoilVUE_20cm_2(1)=VWC_20cm_2
+Alias SoilVUE_20cm_2(2)=Ka_20cm_2
+Alias SoilVUE_20cm_2(3)=T_20cm_2
+Alias SoilVUE_20cm_2(4)=BulkEC_20cm_2
+Alias SoilVUE_30cm_2(1)=VWC_30cm_2
+Alias SoilVUE_30cm_2(2)=Ka_30cm_2
+Alias SoilVUE_30cm_2(3)=T_30cm_2
+Alias SoilVUE_30cm_2(4)=BulkEC_30cm_2
+Alias SoilVUE_40cm_2(1)=VWC_40cm_2
+Alias SoilVUE_40cm_2(2)=Ka_40cm_2
+Alias SoilVUE_40cm_2(3)=T_40cm_2
+Alias SoilVUE_40cm_2(4)=BulkEC_40cm_2
+Alias SoilVUE_50cm_2(1)=VWC_50cm_2
+Alias SoilVUE_50cm_2(2)=Ka_50cm_2
+Alias SoilVUE_50cm_2(3)=T_50cm_2
+Alias SoilVUE_50cm_2(4)=BulkEC_50cm_2
+Alias SoilVUE_5cm_3(1)=VWC_5cm_3
+Alias SoilVUE_5cm_3(2)=Ka_5cm_3
+Alias SoilVUE_5cm_3(3)=T_5cm_3
+Alias SoilVUE_5cm_3(4)=BulkEC_5cm_3
+Alias SoilVUE_10cm_3(1)=VWC_10cm_3
+Alias SoilVUE_10cm_3(2)=Ka_10cm_3
+Alias SoilVUE_10cm_3(3)=T_10cm_3
+Alias SoilVUE_10cm_3(4)=BulkEC_10cm_3
+Alias SoilVUE_20cm_3(1)=VWC_20cm_3
+Alias SoilVUE_20cm_3(2)=Ka_20cm_3
+Alias SoilVUE_20cm_3(3)=T_20cm_3
+Alias SoilVUE_20cm_3(4)=BulkEC_20cm_3
+Alias SoilVUE_30cm_3(1)=VWC_30cm_3
+Alias SoilVUE_30cm_3(2)=Ka_30cm_3
+Alias SoilVUE_30cm_3(3)=T_30cm_3
+Alias SoilVUE_30cm_3(4)=BulkEC_30cm_3
+Alias SoilVUE_40cm_3(1)=VWC_40cm_3
+Alias SoilVUE_40cm_3(2)=Ka_40cm_3
+Alias SoilVUE_40cm_3(3)=T_40cm_3
+Alias SoilVUE_40cm_3(4)=BulkEC_40cm_3
+Alias SoilVUE_50cm_3(1)=VWC_50cm_3
+Alias SoilVUE_50cm_3(2)=Ka_50cm_3
+Alias SoilVUE_50cm_3(3)=T_50cm_3
+Alias SoilVUE_50cm_3(4)=BulkEC_50cm_3
+
+Units VWC_5cm_1=m^3/m^3
+Units Ka_5cm_1=unitless
+Units T_5cm_1=Deg C
+Units BulkEC_5cm_1=dS/m
+Units VWC_10cm_1=m^3/m^3
+Units Ka_10cm_1=unitless
+Units T_10cm_1=Deg C
+Units BulkEC_10cm_1=dS/m
+Units VWC_20cm_1=m^3/m^3
+Units Ka_20cm_1=unitless
+Units T_20cm_1=Deg C
+Units BulkEC_20cm_1=dS/m
+Units VWC_30cm_1=m^3/m^3
+Units Ka_30cm_1=unitless
+Units T_30cm_1=Deg C
+Units BulkEC_30cm_1=dS/m
+Units VWC_40cm_1=m^3/m^3
+Units Ka_40cm_1=unitless
+Units T_40cm_1=Deg C
+Units BulkEC_40cm_1=dS/m
+Units VWC_50cm_1=m^3/m^3
+Units Ka_50cm_1=unitless
+Units T_50cm_1=Deg C
+Units BulkEC_50cm_1=dS/m
+Units VWC_5cm_2=m^3/m^3
+Units Ka_5cm_2=unitless
+Units T_5cm_2=Deg C
+Units BulkEC_5cm_2=dS/m
+Units VWC_10cm_2=m^3/m^3
+Units Ka_10cm_2=unitless
+Units T_10cm_2=Deg C
+Units BulkEC_10cm_2=dS/m
+Units VWC_20cm_2=m^3/m^3
+Units Ka_20cm_2=unitless
+Units T_20cm_2=Deg C
+Units BulkEC_20cm_2=dS/m
+Units VWC_30cm_2=m^3/m^3
+Units Ka_30cm_2=unitless
+Units T_30cm_2=Deg C
+Units BulkEC_30cm_2=dS/m
+Units VWC_40cm_2=m^3/m^3
+Units Ka_40cm_2=unitless
+Units T_40cm_2=Deg C
+Units BulkEC_40cm_2=dS/m
+Units VWC_50cm_2=m^3/m^3
+Units Ka_50cm_2=unitless
+Units T_50cm_2=Deg C
+Units BulkEC_50cm_2=dS/m
+Units VWC_5cm_3=m^3/m^3
+Units Ka_5cm_3=unitless
+Units T_5cm_3=Deg C
+Units BulkEC_5cm_3=dS/m
+Units VWC_10cm_3=m^3/m^3
+Units Ka_10cm_3=unitless
+Units T_10cm_3=Deg C
+Units BulkEC_10cm_3=dS/m
+Units VWC_20cm_3=m^3/m^3
+Units Ka_20cm_3=unitless
+Units T_20cm_3=Deg C
+Units BulkEC_20cm_3=dS/m
+Units VWC_30cm_3=m^3/m^3
+Units Ka_30cm_3=unitless
+Units T_30cm_3=Deg C
+Units BulkEC_30cm_3=dS/m
+Units VWC_40cm_3=m^3/m^3
+Units Ka_40cm_3=unitless
+Units T_40cm_3=Deg C
+Units BulkEC_40cm_3=dS/m
+Units VWC_50cm_3=m^3/m^3
+Units Ka_50cm_3=unitless
+Units T_50cm_3=Deg C
+Units BulkEC_50cm_3=dS/m
+
+'IR thermal sensors Optris
+Public SurfTemp_grnd
+Public SurfTemp_veg
+Units SurfTemp_grnd=Celsius
+Units SurfTemp_veg=Celsius
+'Declare Other Variables
+'Example:
+'Dim Counter
+
+'Declare Constants
+'Example:
+'CONST PI = 3.141592654	
+
+'Define Data Tables.
+'
+'Fast sampling of irradiance during daytime 
+'Only sensors with short reponse time constants
+DataTable(TableMilliSecond,True,-1)
+  DataInterval(0,50,mSec,0)
+	CardOut(0,-1)
+  Sample (1,PAR_Den_CS,IEEE4)
+EndTable
+'
+'Fast sampling of irradiance during daytime
+DataTable(TableSecond,True,-1)
+  DataInterval(0,500,mSec,0)
+	CardOut(0,-1)
+  Average (1,PAR_Den_CS,IEEE4,False)
+  Average (1,PAR_BF_tot,IEEE4,False)
+  Average (1,PAR_BF_diff,IEEE4,False)
+  Average (1,Red_Den_cal,IEEE4,False)
+  Average (1,Far_red_Den_cal,IEEE4,False)
+  Average (1,Blue_Den,IEEE4,False)
+  Average (1,UVA_Den,IEEE4,False)
+  Average (1,UVB_Den,IEEE4,False)
+EndTable
+'
+'Minute summaries of weather and radiation
+DataTable(TableMinute,True,-1)
+  DataInterval(0,1,Min,0)
+	CardOut(0,-1)
+  Average (1,PAR_Den,IEEE4,False)
+  Average (1,PAR_Den_CS,IEEE4,False)
+  Minimum(1,PAR_Den_CS,IEEE4,False,False)
+  Maximum(1,PAR_Den_CS,IEEE4,False,False)
+  Average (1,PAR_BF_tot,IEEE4,False)
+  Average (1,PAR_BF_diff,IEEE4,False)
+  Average (1,Solar_irrad,IEEE4,False)
+	Average (1,PTemp_C,IEEE4, FALSE)
+  WindVector (1,WindSpd,WindDir,IEEE4,False,0,0,0)
+  FieldNames("WindSpd_S_WVT,WindDir_D1_WVT,WindDir_SD1_WVT")
+  Average(1,AirTemp,IEEE4,False)
+  Minimum(1,AirTemp,IEEE4,False,False)
+  Maximum(1,AirTemp,IEEE4,False,False)
+  Average(1,RelHumidity,IEEE4,False)
+  Average(1,AirDewPoint,IEEE4,False)
+  Average(1,AirPressure,IEEE4,False)
+  Totalize(1,Ramount,IEEE4,False)
+  Totalize(1,Hamount,IEEE4,False)
+  Average (1,Red_Den_cal,IEEE4,False)
+  Average (1,Far_red_Den_cal,IEEE4,False)
+  Average (1,RFR_rat,IEEE4,False)
+  Average (1,Blue_Den,IEEE4,False)
+  Average (1,UVA_Den,IEEE4,False)
+  Average (1,UVB_Den,IEEE4,False)
+  Average (1,SurfTemp_grnd,IEEE4,False)
+  Average (1,SurfTemp_veg,IEEE4,False)
+  Average (4,T107_C,IEEE4,False)
+EndTable
+'
+'Hourly summaries of weather, radiation and soil data
+DataTable(TableHour,True,-1)
+	DataInterval(0,60,Min,0)
+	CardOut(0,-1)
+  Average(1,PAR_Den,IEEE4,False)
+  StdDev (1,PAR_Den,IEEE4,False)
+  Minimum(1,PAR_Den,IEEE4,False,True)
+  Maximum(1,PAR_Den,IEEE4,False,True)
+  Average(1,PAR_Den_CS,IEEE4,False)
+  StdDev (1,PAR_Den_CS,IEEE4,False)
+  Minimum(1,PAR_Den_CS,IEEE4,False,True)
+  Maximum(1,PAR_Den_CS,IEEE4,False,True)
+  Average(1,PAR_BF_tot,IEEE4,False)
+  StdDev (1,PAR_BF_tot,IEEE4,False)
+  Minimum(1,PAR_BF_tot,IEEE4,False,True)
+  Maximum(1,PAR_BF_tot,IEEE4,False,True)
+  Average(1,PAR_BF_diff,IEEE4,False)
+  StdDev (1,PAR_BF_diff,IEEE4,False)
+  Minimum(1,PAR_BF_diff,IEEE4,False,True)
+  Maximum(1,PAR_BF_diff,IEEE4,False,True)
+  Average(1,Solar_irrad,IEEE4,False)
+  StdDev (1,Solar_irrad,IEEE4,False)
+  Minimum(1,Solar_irrad,IEEE4,False,True)
+  Maximum(1,Solar_irrad,IEEE4,False,True)
+  Average (1,Red_Den_cal,IEEE4,False)
+  StdDev (1,Red_Den_cal,IEEE4,False)
+  Minimum(1,Red_Den_cal,IEEE4,False,True)
+  Maximum(1,Red_Den_cal,IEEE4,False,True)
+  Average (1,Far_red_Den_cal,IEEE4,False)
+  StdDev (1,Far_red_Den_cal,IEEE4,False)
+  Minimum(1,Far_red_Den_cal,IEEE4,False,True)
+  Maximum(1,Far_red_Den_cal,IEEE4,False,True)
+  Average (1,RFR_rat,IEEE4,False)
+  StdDev (1,RFR_rat,IEEE4,False)
+  Minimum(1,RFR_rat,IEEE4,False,True)
+  Maximum(1,RFR_rat,IEEE4,False,True)
+  Average (1,Blue_Den,IEEE4,False)
+  StdDev (1,Blue_Den,IEEE4,False)
+  Minimum(1,Blue_Den,IEEE4,False,True)
+  Maximum(1,Blue_Den,IEEE4,False,True)
+  Average (1,UVA_Den,IEEE4,False)
+  StdDev (1,UVA_Den,IEEE4,False)
+  Minimum(1,UVA_Den,IEEE4,False,True)
+  Maximum(1,UVA_Den,IEEE4,False,True)
+  Average (1,UVB_Den,IEEE4,False)
+  StdDev (1,UVB_Den,IEEE4,False)
+  Minimum(1,UVB_Den,IEEE4,False,True)
+  Maximum(1,UVB_Den,IEEE4,False,True)
+  WindVector(1, WindSpd,WindDir,IEEE4,False,900,0,0)
+  FieldNames("WindSpd_S_WVT,WindDir_D1_WVT,WindDir_SD1_WVT")
+  Average(1,AirTemp,IEEE4,False)
+  StdDev(1,AirTemp,IEEE4,False)
+  Minimum(1,AirTemp,IEEE4,False,True)
+  Maximum(1,AirTemp,IEEE4,False,True)
+  Average(1,RelHumidity,IEEE4,False)
+  Average(1,AirDewPoint,IEEE4,False)
+  StdDev(1,AirDewPoint,IEEE4,False)
+  Minimum(1,AirDewPoint,IEEE4,False,True)
+  Maximum(1,AirDewPoint,IEEE4,False,True)
+  Average(1,AirPressure,IEEE4,False)
+  Minimum(1,AirPressure,IEEE4,False,True)
+  Maximum(1,AirPressure,IEEE4,False,True)
+  Totalize(1,Ramount,IEEE4,False)
+  Totalize(1,Hamount,IEEE4,False)
+  Average(1,SurfTemp_grnd,IEEE4,False)
+  StdDev (1,SurfTemp_grnd,IEEE4,False)
+  Minimum(1,SurfTemp_grnd,IEEE4,False,True)
+  Maximum(1,SurfTemp_grnd,IEEE4,False,True)
+  Average(1,SurfTemp_veg,IEEE4,False)
+  StdDev (1,SurfTemp_veg,IEEE4,False)
+  Minimum(1,SurfTemp_veg,IEEE4,False,True)
+  Maximum(1,SurfTemp_veg,IEEE4,False,True)
+  Average(4,T107_C,IEEE4,False)
+  StdDev (4,T107_C,IEEE4,False)
+  Minimum(4,T107_C,IEEE4,False,True)
+  Maximum(4,T107_C,IEEE4,False,True)
+' CS655 x 3
+	Average(1,VWC_1,IEEE4,False)
+	Average(1,EC_1,IEEE4,False)
+	Average(1,T_1,IEEE4,False)
+	Average(1,VWC_2,IEEE4,False)
+	Average(1,EC_2,IEEE4,False)
+	Average(1,T_2,IEEE4,False)
+	Average(1,VWC_3,IEEE4,False)
+	Average(1,EC_3,IEEE4,False)
+	Average(1,T_3,IEEE4,False)
+' SoilVUE #1
+	Average(1,VWC_5cm_1,IEEE4,False)
+	Average(1,Ka_5cm_1,IEEE4,False)
+	Average(1,T_5cm_1,IEEE4,False)
+	Average(1,BulkEC_5cm_1,IEEE4,False)
+	Average(1,VWC_10cm_1,IEEE4,False)
+	Average(1,Ka_10cm_1,IEEE4,False)
+	Average(1,T_10cm_1,IEEE4,False)
+	Average(1,BulkEC_10cm_1,IEEE4,False)
+	Average(1,VWC_20cm_1,IEEE4,False)
+	Average(1,Ka_20cm_1,IEEE4,False)
+	Average(1,T_20cm_1,IEEE4,False)
+	Average(1,BulkEC_20cm_1,IEEE4,False)
+	Average(1,VWC_30cm_1,IEEE4,False)
+	Average(1,Ka_30cm_1,IEEE4,False)
+	Average(1,T_30cm_1,IEEE4,False)
+	Average(1,BulkEC_30cm_1,IEEE4,False)
+	Average(1,VWC_40cm_1,IEEE4,False)
+	Average(1,Ka_40cm_1,IEEE4,False)
+	Average(1,T_40cm_1,IEEE4,False)
+	Average(1,BulkEC_40cm_1,IEEE4,False)
+	Average(1,VWC_50cm_1,IEEE4,False)
+	Average(1,Ka_50cm_1,IEEE4,False)
+	Average(1,T_50cm_1,IEEE4,False)
+	Average(1,BulkEC_50cm_1,IEEE4,False)
+' SoilVUE #2
+	Sample(1,VWC_5cm_2,IEEE4,False)
+	Average(1,Ka_5cm_2,IEEE4,False)
+	Average(1,T_5cm_2,IEEE4,False)
+	Average(1,BulkEC_5cm_2,IEEE4,False)
+	Average(1,VWC_10cm_2,IEEE4,False)
+	Average(1,Ka_10cm_2,IEEE4,False)
+	Average(1,T_10cm_2,IEEE4,False)
+	Average(1,BulkEC_10cm_2,IEEE4,False)
+	Average(1,VWC_20cm_2,IEEE4,False)
+	Average(1,Ka_20cm_2,IEEE4,False)
+	Average(1,T_20cm_2,IEEE4,False)
+	Average(1,BulkEC_20cm_2,IEEE4,False)
+	Average(1,VWC_30cm_2,IEEE4,False)
+	Average(1,Ka_30cm_2,IEEE4,False)
+	Average(1,T_30cm_2,IEEE4,False)
+	Average(1,BulkEC_30cm_2,IEEE4,False)
+	Average(1,VWC_40cm_2,IEEE4,False)
+	Average(1,Ka_40cm_2,IEEE4,False)
+	Average(1,T_40cm_2,IEEE4,False)
+	Average(1,BulkEC_40cm_2,IEEE4,False)
+	Average(1,VWC_50cm_2,IEEE4,False)
+	Average(1,Ka_50cm_2,IEEE4,False)
+	Average(1,T_50cm_2,IEEE4,False)
+	Average(1,BulkEC_50cm_2,IEEE4,False)
+' SoilVUE #3
+	Average(1,VWC_5cm_3,IEEE4,False)
+	Average(1,Ka_5cm_3,IEEE4,False)
+	Average(1,T_5cm_3,IEEE4,False)
+	Average(1,BulkEC_5cm_3,IEEE4,False)
+	Average(1,VWC_10cm_3,IEEE4,False)
+	Average(1,Ka_10cm_3,IEEE4,False)
+	Average(1,T_10cm_3,IEEE4,False)
+	Average(1,BulkEC_10cm_3,IEEE4,False)
+	Average(1,VWC_20cm_3,IEEE4,False)
+	Average(1,Ka_20cm_3,IEEE4,False)
+	Average(1,T_20cm_3,IEEE4,False)
+	Average(1,BulkEC_20cm_3,IEEE4,False)
+	Average(1,VWC_30cm_3,IEEE4,False)
+	Average(1,Ka_30cm_3,IEEE4,False)
+	Average(1,T_30cm_3,IEEE4,False)
+	Average(1,BulkEC_30cm_3,IEEE4,False)
+	Average(1,VWC_40cm_3,IEEE4,False)
+	Average(1,Ka_40cm_3,IEEE4,False)
+	Average(1,T_40cm_3,IEEE4,False)
+	Average(1,BulkEC_40cm_3,IEEE4,False)
+	Average(1,VWC_50cm_3,IEEE4,False)
+	Average(1,Ka_50cm_3,IEEE4,False)
+	Average(1,T_50cm_3,IEEE4,False)
+	Average(1,BulkEC_50cm_3,IEEE4,False)
+' Logger diagnostics
+  Minimum(1,SupplyVoltage,IEEE4,False,False)
+  Maximum(1,SupplyVoltage,IEEE4,False,False)
+  Minimum(1,ReferenceVoltage,IEEE4,False,False)
+  Minimum(1,PTemp_C,IEEE4,False,True)
+  Maximum(1,PTemp_C,IEEE4,False,True)
+  Maximum(1,ReferenceVoltage,IEEE4,False,False)
+  Minimum(1,BattV,IEEE4,False,False)
+  Maximum(1,BattV,IEEE4,False,False)
+ 	Sample(1,LowPowerCounts,UINT4)
+EndTable
+'
+'Define Subroutinesg
+'Sub
+	'EnterSub instructions here
+'EndSub
+
+'Main Program
+BeginProg
+  CPISpeed(500) 'fast CPI communication
+	  'Main Scan (we set 600 buffers = 1 min to see if we can avoid bad values)
+     Scan(50,mSec,1200,0)
+    'LI190SB Quantum Sensor measurements PAR_Tot and PAR_Den, channel 1:
+    'Calibration is for LI-190 s/n xxxx  
+		CDM_VoltDiff(CDM_A116,1,PAR_Den,1,Autorange,1,True,0,3750,235.51,0)
+    'CS-310 Quantum Sensor measurements PAR_Tot and PAR_Den, channel x:
+    'Calibration is for CS-319 s/n xxxx  
+		CDM_VoltDiff(CDM_A116,1,PAR_Den_CS,1,Autorange,4,True,0,3750,100,0)
+    'BF5 Quantum Sensor measurements PAR_Tot and PAR_Den
+    'The Multiplier and offset are valid for any BF5 instrument.
+    CDM_VoltDiff(CDM_A116,1,PAR_BF_tot,1,Autorange,3,True,0,3750,1,0)
+    CDM_VoltDiff(CDM_A116,1,PAR_BF_diff,1,Autorange,2,True,0,3750,1,0)
+    'The Multiplier and offset are valid for any SMP3-V instrument.
+     CDM_VoltDiff(CDM_A116,1,Solar_irrad,1,Autorange,8,True,0,3750,2.2,-200)
+    'SKR110 raw millivolts
+     CDM_VoltDiff(CDM_A116,1,Red_Den,1,Autorange,5,True,0,3750,-1,0)
+     CDM_VoltDiff(CDM_A116,1,Far_red_Den,1,Autorange,6,True,0,3750,-1,0)     
+    'SKR110 calibrated
+     CDM_VoltDiff(CDM_A116,1,Red_Den_cal,1,Autorange,5,True,0,3750,-2.972,0)
+     CDM_VoltDiff(CDM_A116,1,Far_red_Den_cal,1,Autorange,6,True,0,3750,-2.483,0)
+     RFR_rat=Red_Den_cal/Far_red_Den_cal
+     ' sglux sensors raw millivolts
+    CDM_VoltDiff(CDM_A116,1,Blue_Den,1,Autorange,14,True,0,3750,1,0)
+    CDM_VoltDiff(CDM_A116,1,UVB_Den,1,Autorange,15,True,0,3750,1,0)
+    CDM_VoltDiff(CDM_A116,1,UVA_Den,1,Autorange,16,True,0,3750,1,0)
+    'logger monitoring
+		'Default CR6 Datalogger Battery Voltage measurement 'BattV'
+		Battery(BattV)
+		'Default CR6 Datalogger Wiring Panel Temperature measurement 'PTemp_C'
+		PanelTemp(PTemp_C,15000)
+'    DewPoint (AirDewPoint,AirTemp,RelHumidity)
+		'Default Battery Voltage measurement 'CDM1BattV' on CDM-A116 with CPI address 1
+		CDM_Battery(CDM_A116,1,CDM1BattV)
+		'Default Wiring Panel Temperature measurements 'CDMPTempC()' on CDM-A116 with CPI address 1
+'		CDM_PanelTemp(CDM_A116,1,CDMPTemp_C(),4,1,50)
+ 		'107 Temperature Probe (CSL) measurement 'T107_C' on CDM-A116 with CPI address 1
+		' 4 sensors single ended channels 20-23 (10-11 differential)
+		CDM_Therm107(CDM_A116,1,T107_C,4,20,3,0,3750,1,0)
+		' SLOWER SENSORS 
+    ' Optris IR thermometres calibrated C
+    ' Multiplier and offset depend on sensor settings
+    VoltDiff(SurfTemp_grnd,1,Autorange,U5,True,0,15000,0.05,-30)
+    VoltDiff(SurfTemp_veg,1,Autorange,U7,True,0,15000,0.05,-30)
+		'Vaisala WXP536 weather sensor
+		If TimeIntoInterval(0,10,Sec) Then
+		  SDI12Recorder(SDI12(),C1,0,"R!",1,0)
+		  DewPoint(AirDewPoint,AirTemp,RelHumidity)
+		EndIf
+ 		'Call Output Tables
+  	If PAR_Den_CS > 1 Then
+ 		  CallTable(TableMilliSecond)
+ 		  CallTable(TableSecond)
+ 		EndIf
+    CallTable(TableMinute)
+    CallTable(TableHour)
+	  NextScan	
+'
+' Connditions in the soil change slowly, all soil sensors are here
+SlowSequence
+    'Measure the SoilVUE10 Complete Soil Profiler every 12 min = 5 times per hour
+    Scan(12,Min,0,0)
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_5cm', 'Ka_5cm', 'T_5cm', and 'BulkEC_5cm'
+			SDI12Recorder(SoilVUE_5cm_1(),C3,0,"M1!",1,0,-1)
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_10cm', 'Ka_10cm', 'T_10cm', and 'BulkEC_10cm'
+			SDI12Recorder(SoilVUE_10cm_1(),C3,0,"M2!",1,0,-1)
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_20cm', 'Ka_20cm', 'T_20cm', and 'BulkEC_20cm'
+			SDI12Recorder(SoilVUE_20cm_1(),C3,0,"M3!",1,0,-1)
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_30cm', 'Ka_30cm', 'T_30cm', and 'BulkEC_30cm'
+			SDI12Recorder(SoilVUE_30cm_1(),C3,0,"M4!",1,0,-1)
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_40cm', 'Ka_40cm', 'T_40cm', and 'BulkEC_40cm'
+			SDI12Recorder(SoilVUE_40cm_1(),C3,0,"M5!",1,0,-1)
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_50cm', 'Ka_50cm', 'T_50cm', and 'BulkEC_50cm'
+			SDI12Recorder(SoilVUE_50cm_1(),C3,0,"M6!",1,0,-1)
+			
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_5cm_2', 'Ka_5cm_2', 'T_5cm_2', and 'BulkEC_5cm_2'
+			SDI12Recorder(SoilVUE_5cm_2(),C3,1,"M1!",1,0,-1)
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_10cm_2', 'Ka_10cm_2', 'T_10cm_2', and 'BulkEC_10cm_2'
+			SDI12Recorder(SoilVUE_10cm_2(),C3,1,"M2!",1,0,-1)
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_20cm_2', 'Ka_20cm_2', 'T_20cm_2', and 'BulkEC_20cm_2'
+			SDI12Recorder(SoilVUE_20cm_2(),C3,1,"M3!",1,0,-1)
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_30cm_2', 'Ka_30cm_2', 'T_30cm_2', and 'BulkEC_30cm_2'
+			SDI12Recorder(SoilVUE_30cm_2(),C3,1,"M4!",1,0,-1)
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_40cm_2', 'Ka_40cm_2', 'T_40cm_2', and 'BulkEC_40cm_2'
+			SDI12Recorder(SoilVUE_40cm_2(),C3,1,"M5!",1,0,-1)
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_50cm_2', 'Ka_50cm_2', 'T_50cm_2', and 'BulkEC_50cm_2'
+			SDI12Recorder(SoilVUE_50cm_2(),C3,1,"M6!",1,0,-1)
+			
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_5cm_3', 'Ka_5cm_3', 'T_5cm_3', and 'BulkEC_5cm_3'
+			SDI12Recorder(SoilVUE_5cm_3(),C3,2,"M1!",1,0,-1)
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_10cm_3', 'Ka_10cm_3', 'T_10cm_3', and 'BulkEC_10cm_3'
+			SDI12Recorder(SoilVUE_10cm_3(),C3,2,"M2!",1,0,-1)
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_20cm_3', 'Ka_20cm_3', 'T_20cm_3', and 'BulkEC_20cm_3'
+			SDI12Recorder(SoilVUE_20cm_3(),C3,2,"M3!",1,0,-1)
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_30cm_3', 'Ka_30cm_3', 'T_30cm_3', and 'BulkEC_30cm_3'
+			SDI12Recorder(SoilVUE_30cm_3(),C3,2,"M4!",1,0,-1)
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_40cm_3', 'Ka_40cm_3', 'T_40cm_3', and 'BulkEC_40cm_3'
+			SDI12Recorder(SoilVUE_40cm_3(),C3,2,"M5!",1,0,-1)
+			'SoilVUE10 Complete Soil Profiler measurements 'VWC_50cm_3', 'Ka_50cm_3', 'T_50cm_3', and 'BulkEC_50cm_3'
+			SDI12Recorder(SoilVUE_50cm_3(),C3,2,"M6!",1,0,-1)
+			
+  		'CS650/655 Water Content Reflectometer measurements 'VWC', 'EC', and 'T'
+			SDI12Recorder(CS65X_1(),U1,"1","M!",1,0,-1)
+			SDI12Recorder(CS65X_2(),U1,"2","M!",1,0,-1)
+			SDI12Recorder(CS65X_3(),U1,"3","M!",1,0,-1)
+			NextScan
+EndProg
+

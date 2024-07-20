@@ -1,0 +1,581 @@
+---
+title: "Sunlight Dynamics at Viikki"
+subtitle: "1. Visible Radiation, 2017-2023"
+author: "Pedro J. Aphalo"
+date: 2024-01-17
+date-modified: 2024-02-04
+format: 
+  html:
+    embed-resources: true
+code-fold: true
+code-tools: true
+---
+
+## Introduction
+
+This is an analysis of the visible- (VIS) and near-infrared radiation (UVR) data from Viikki,
+Helsinki, Finland, from the Summers of years 2017-2024. The measurements are all
+taken well above the vegetation and describe sunlight irradiance at the top of
+vegetation. Using multiple broadband sensors, calibrated in-situ, it was
+possible to quantify PAR, blue, red and far-red radiation.
+
+The aim is to describe the natural radiation environment to assess the spectral
+composition at a high frequency of measurement (1 min) over several years.
+Ratios between blue and red light and red and far-red light are important for
+plants. In addition, although the length of the day is normally given based on
+astronomical formulas predicting the position of the sun, plants perceive the
+length of the photoperiod through photoreceptors, most likely based on a
+threshold irradiance. It is thus important to understand how clouds and aerosols
+alter the duration of the photoperiod based on PAR, blue, red and far-red light.
+Although difficult to meassure reliably, changes in the solar spectrum around
+sunset are especially important for plant responses, as has been demonstrated
+by experiemnts with end-of-day red- and far-red light treatments.
+
+The data have been acquired as 1 min means from measurements every 5 s, thus
+allowing the computation of quantities integrated over longer periods of time in
+addition to their direct use in the characterization of the light environment.
+Daily fluence rate, or daily light integral (DLI), of PAR and UV radiation are
+also important determinants of plants responses.
+
+At the latitude of Helsinki, snowfall is frequent in the winter, affects our
+sensors, thus measurements are subject to possible errors outside of the Spring,
+Summer early Autumn period. Thus, our analysis is based on the period April to
+October, when plants are active.
+
+Only data for sun elevations of more than -18 degrees (astronomical dawn and
+dusk) have been included in some analyses and above 5 degrees in other cases.
+There are multiple reasons for this. When the angle of incidence is shallow,
+some cosine diffusers of broadband sensors tend to deviate from the ideal
+response; small errors in levelling the sensors have a large effect on readings,
+but when the wavebands being combined into a ratio are measured with the same
+sensor, sensor-levelling deviations are less likely; when the sun is low in the
+sky diffuse radiation predominates. Because deviations from the ideal cosine
+response can differ in magnitude and direction between the sensors using
+diffusers of different designs, ratios between irradiances measured with them
+are likely be more prone errors at very low solar elevations.
+The data include both variation inherent to the light in the environment and
+measurement noise. Some birds like to use the sensors as perches. With a big
+data set as this, occasional disturbances are unlikely to affect the overall
+trends, but, on the other hand extreme outlier values from a set of hundreds of
+thousands of means, are most likely the result of disturbances rather than true
+extreme conditions in the environment. Especially, when they are isolated in
+time and for a few minutes. In time series logged once per minute, these
+occassional outliers are most likely transient disturbances.
+
+## Set up
+
+```{r, message=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggpmisc)
+library(ggdensity)
+library(ggbeeswarm)
+library(patchwork)
+library(photobiology)
+library(photobiologyInOut)
+library(photobiologyWavebands)
+theme_set(theme_bw(14) + theme(legend.position = "bottom"))
+```
+
+
+## Modelled clear sky diffuse fraction
+
+Under clear sky conditions, the contribution of diffuse (= scattered) 
+radiation to total irradiance measured on a horizontal depends strongly on
+solar elevation. The proportion of diffuse radiation decreases most
+significantly at elevation angles less than 25 degrees. As we measured
+direct and diffuse PAR separately, comparing these measurements against
+the expected "floor" value under estimated for clear sky conditions, can
+inform about deviations caused by clouds and aerosols in the atmosphere.
+
+We used the Quick TUV calculator to estimate direct and diffuse spectral
+irradiance components for different solar elevation angles (zenith  angles in
+the TUV model) under clear-sky conditions. Simulations were done with different
+levels of aerosols in the atmosphere. A low level of aerosols of xxxx was
+selected for use in further calculations as a baseline for diffuse PAR fraction
+at different sun elevation angles. It must be remembered that scattering
+enhanced compared to the baseline level reflects the influence of both clouds
+and possibly higher levels of aerosols than used in the simulations. The
+simulation assumed 300 DU for ozone column, although this is of little
+relevance for estimations of PAR. The range of elevations was chosen based
+on the maximum solar elevation at Helsinki.
+
+We read the text files with the Quick TUV output obtained on-line using the
+interactive Quick-TUV calculator with R, that we use for all computations
+below. 
+
+```{r, message = FALSE, warning = FALSE, results='hide'}
+# We read the text files with the Quick TUV output obtained on-line using the
+# interactive Quick-TUV calculator using the R for photobiology suite
+
+#  The search pattern can be changed from "low" to "4str" or "tuv-default" the default aerosols from Quick TUV. 
+files <- list.files("../TUV-diffuse-direct-SZA/", pattern = "htm$", full.names = TRUE)
+
+SZA.mspct <- source_mspct()
+
+for (f in files) {
+  name <- gsub("tuv-|htm", "", basename(f))
+  name <- paste("tuv.za.", name, "deg")
+  print(name)
+  SZA.mspct[[name]] <- read_qtuv_txt(f, ozone.du = 300, label = "Quick TUV simulation, clouds optical depth = 0, aerosol optical depth = 0.07, albedo = 0.1, ground elevation = 0")
+}
+
+# three spectra are read from each file
+
+SZA_tot.mspct <- source_mspct()
+SZA_diff.mspct <- source_mspct()
+SZA_dir.mspct <- source_mspct()
+for (n in names(SZA.mspct)) {
+  SZA_tot.mspct[[n]] <- 
+    SZA.mspct[[n]][ , c("w.length", "s.e.irrad")]
+  SZA_diff.mspct[[n]] <- 
+    with(SZA.mspct[[n]], source_spct(w.length = w.length, s.e.irrad = s.e.irrad.diff.down))
+  SZA_dir.mspct[[n]] <- 
+    with(SZA.mspct[[n]], source_spct(w.length = w.length, s.e.irrad = s.e.irrad.dir))
+}
+```
+
+```{r, echo = FALSE, results='hide'}
+# Based on the spectral simulations we compute PAR irradiances and the diffuse 
+# fraction for each of the different SZAs.
+
+# q_irrad(SZA.mspct, PAR(), scale.factor = 1e6)
+PAR_tot.tb <- q_irrad(SZA_tot.mspct, PAR(), scale.factor = 1e6)
+PAR_dir.tb <- q_irrad(SZA_dir.mspct, PAR(), scale.factor = 1e6)
+PAR_diff.tb <- q_irrad(SZA_diff.mspct, PAR(), scale.factor = 1e6)
+Blue_tot.tb <- q_irrad(SZA_tot.mspct, Blue("Sellaro"), scale.factor = 1e6)
+Blue_dir.tb <- q_irrad(SZA_dir.mspct, Blue("Sellaro"), scale.factor = 1e6)
+Blue_diff.tb <- q_irrad(SZA_diff.mspct, Blue("Sellaro"), scale.factor = 1e6)
+Green_tot.tb <- q_irrad(SZA_tot.mspct, Green("Sellaro"), scale.factor = 1e6)
+Green_dir.tb <- q_irrad(SZA_dir.mspct, Green("Sellaro"), scale.factor = 1e6)
+Green_diff.tb <- q_irrad(SZA_diff.mspct, Green("Sellaro"), scale.factor = 1e6)
+Red_tot.tb <- q_irrad(SZA_tot.mspct, Red("Sellaro"), scale.factor = 1e6)
+Red_dir.tb <- q_irrad(SZA_dir.mspct, Red("Sellaro"), scale.factor = 1e6)
+Red_diff.tb <- q_irrad(SZA_diff.mspct, Red("Sellaro"), scale.factor = 1e6)
+
+PAR.tb <- 
+  data.frame(
+    w.band = "PAR",
+    SZA = as.numeric(gsub("tuv.za.|.deg", "", PAR_tot.tb$spct.idx)),
+    SEA = 90 - as.numeric(gsub("tuv.za.|.deg", "", PAR_tot.tb$spct.idx)),
+    total = PAR_tot.tb$`Q_PAR[`,
+    direct = PAR_dir.tb$`Q_PAR[`,
+    diffuse = PAR_diff.tb$`Q_PAR[`,
+    diff_fraction = PAR_diff.tb$`Q_PAR[` / PAR_tot.tb$`Q_PAR[`
+  )
+# PAR.tb
+
+Blue.tb <- 
+  data.frame(
+    w.band = "Blue",
+    SZA = as.numeric(gsub("tuv.za.|.deg", "", Blue_tot.tb$spct.idx)),
+    SEA = 90 - as.numeric(gsub("tuv.za.|.deg", "", Blue_tot.tb$spct.idx)),
+    total = Blue_tot.tb$`Q_Blue.Sellaro`,
+    direct = Blue_dir.tb$`Q_Blue.Sellaro`,
+    diffuse = Blue_diff.tb$`Q_Blue.Sellaro`,
+    diff_fraction = Blue_diff.tb$`Q_Blue.Sellaro` / Blue_tot.tb$`Q_Blue.Sellaro`
+  )
+# Blue.tb
+
+Green.tb <- 
+  data.frame(
+    w.band = "Green",
+    SZA = as.numeric(gsub("tuv.za.|.deg", "", Green_tot.tb$spct.idx)),
+    SEA = 90 - as.numeric(gsub("tuv.za.|.deg", "", Green_tot.tb$spct.idx)),
+    total = Green_tot.tb$`Q_Green.Sellaro`,
+    direct = Green_dir.tb$`Q_Green.Sellaro`,
+    diffuse = Green_diff.tb$`Q_Green.Sellaro`,
+    diff_fraction = Green_diff.tb$`Q_Green.Sellaro` / Green_tot.tb$`Q_Green.Sellaro`
+  )
+# Green.tb
+
+Red.tb <- 
+  data.frame(
+    w.band = "Red",
+    SZA = as.numeric(gsub("tuv.za.|.deg", "", Red_tot.tb$spct.idx)),
+    SEA = 90 - as.numeric(gsub("tuv.za.|.deg", "", Red_tot.tb$spct.idx)),
+    total = Red_tot.tb$`Q_Red.Sellaro`,
+    direct = Red_dir.tb$`Q_Red.Sellaro`,
+    diffuse = Red_diff.tb$`Q_Red.Sellaro`,
+    diff_fraction = Red_diff.tb$`Q_Red.Sellaro` / Red_tot.tb$`Q_Red.Sellaro`
+  )
+# Red.tb
+
+# Far-red not included in spectral simulation
+
+TUV_VIS.tb <- rbind(PAR.tb, Blue.tb, Green.tb, Red.tb)
+colnames(TUV_VIS.tb)
+```
+
+We fit a spline obtaining a function that can be used to obtain by interpolation
+estimates of the diffuse PAR fraction for any solar elevation covered by the
+simulations.
+
+```{r}
+clear_sky_PAR_diff_frac.fun <- splinefun(PAR.tb$SEA, PAR.tb$diff_fraction)
+clear_sky_Blue_diff_frac.fun <- splinefun(Blue.tb$SEA, Blue.tb$diff_fraction)
+clear_sky_Green_diff_frac.fun <- splinefun(Green.tb$SEA, Green.tb$diff_fraction)
+clear_sky_Red_diff_frac.fun <- splinefun(Red.tb$SEA, Red.tb$diff_fraction)
+```
+
+We plot the values of the computed simulations as points and intermediate values
+obtained by interpolation as a line against solar elevation angle @fig-tuv. This is to 
+check that the interpolation worked as expected.
+
+```{r}
+#| label: fig-tuv-diff-fr
+#| echo: false
+#| fig-cap: "Contribution of diffuse Blue, Green and Red radiation to total Blue, Green and Red expressed as photons as a function of solar elevation angle. Computed with the Quick TUV calculator for clear sky conditions. Points are values obtained by running the TUV model, and the black lines are interpolation splines."
+
+ggplot(subset(TUV_VIS.tb, w.band != "PAR"), aes(SEA, diff_fraction, color = w.band)) +
+#  stat_function(fun = clear_sky_PAR_diff_frac.fun, xlim = c(-15, 90), colour = "black") +
+  stat_function(fun = clear_sky_Blue_diff_frac.fun, xlim = c(-15, 90), colour = "black") +
+  stat_function(fun = clear_sky_Green_diff_frac.fun, xlim = c(-15, 90), colour = "black") +
+  stat_function(fun = clear_sky_Red_diff_frac.fun, xlim = c(-15, 90), colour = "black") +
+  geom_point(na.rm = TRUE) +
+  scale_x_continuous(name = "Solar elevation angle (degrees)",
+                     breaks = c(-10, 0, 15, 30, 45, 60, 75, 90)) +
+  labs(y = expression("Diffuse fraction, "*Q[s] / Q[t])) +
+  scale_color_manual(name = "Waveband  ", values = c(Blue = "cornflowerblue", Red = "darkred", Green = "darkgreen")) +
+  expand_limits(y = 0)
+```
+
+```{r}
+#| label: fig-tuv
+#| echo: false
+#| fig-cap: "Contribution of diffuse PAR to total PAR depending on solar elevation angle. Computed with the Quick TUV calculator for clear sky conditions."
+ggplot(PAR.tb, aes(SEA, diff_fraction)) +
+  geom_point(colour = "orange") +
+  stat_function(fun = clear_sky_PAR_diff_frac.fun, xlim = c(-15, 90)) +
+  labs(y = expression("Diffuse PAR, "*Q[s] / Q[t]),
+       x = "Solar elevation angle (degrees)") +
+  expand_limits(y = 0)
+```
+
+# Load observed data
+
+The whole data set, starting from 2016, is available on-line (Aphalo2024).
+Measurements of ultraviolet radiation started in 2019. After loading these data
+series, we subset the observations with no missing values in any of the
+variables to be used in the analysis. We select also observations for the months
+and solar elevations of interest. We compute an estimate of the excess diffuse
+radiation compared to the baseline. Then we convert these values into a factor
+with two levels corresponding to measurements acquired with the sun disk
+occluded by clouds or not. We also remove a couple of extreme outliers.
+
+```{r, results='hide'}
+load("../data-rda/minute_2015_latest.tb.rda")
+
+nrow(minute_2015_latest.tb)
+range(minute_2015_latest.tb$time)
+
+subset(minute_2015_latest.tb,
+         !is.na(PAR_umol) & 
+         sun_elevation >= -18 &
+         month_of_year >= 3 & month_of_year <= 11) |>
+  mutate(month_name = factor(month_name, 
+                             levels = rev(levels(month_name)))) -> minutes.df
+
+nrow(minutes.df)
+range(minutes.df$time)
+levels(minutes.df$month_name)
+
+```
+
+To characterize day-to-day variation, we compute summaries for each day. The accumulated daily irradiances or DLI are computed as well as lengths of time or durations of exposures to UV-B radiation above different irradiance thresholds are computed. We also compute day length using Meuss' algorithms.
+
+**We need to check for missing values to get the correct daily total, and skip those days when data are incomplete, or fill small gaps by interpolation!**
+
+```{r, results='hide', message=FALSE}
+viikki_bio3.geo <- data.frame(lon = 25.01673,
+                              lat = 60.2253,
+                              address = "BIO3, Viikki")
+
+longest.true.run <- function(x) {
+  if (any(x)) {
+    rl <- rle(x)
+    max(rl$lengths[rl$values])
+  } else {
+    0
+  }
+}
+
+minutes.df |>
+  group_by(day_of_year, month_of_year, calendar_year) |>
+  summarise(time = time[1],
+            PAR.DLI = sum(PAR_umol) * 1e-6 * 60,
+#            PAR10umol.hours = sum(PAR_umol > 10) / 60,
+            PAR30umol.hours = sum(PAR_umol > 30) / 60,
+            PAR100umol.hours = sum(PAR_umol > 100) / 60,
+            PAR300umol.hours = sum(PAR_umol > 300) / 60,
+            PAR1000umol.hours = sum(PAR_umol > 1000) / 60,
+#            PAR10umol.run.hours = longest.true.run(PAR_umol > 10) / 60,
+            PAR30umol.run.hours = longest.true.run(PAR_umol > 30) / 60,
+            PAR100umol.run.hours = longest.true.run(PAR_umol > 100) / 60,
+            PAR300umol.run.hours = longest.true.run(PAR_umol > 300) / 60,
+            PAR1000umol.run.hours = longest.true.run(PAR_umol > 1000) / 60,
+            n = n()) |>
+  ungroup() |>
+  mutate(day.length = day_length(time, geocode = viikki_bio3.geo),
+#         PAR10umol.time.rel = PAR10umol.hours / day.length,
+         PAR30umol.time.rel = PAR30umol.hours / day.length,
+         PAR100umol.time.rel = PAR100umol.hours / day.length,
+         PAR300umol.time.rel = PAR300umol.hours / day.length,
+         PAR1000umol.time.rel = PAR1000umol.hours / day.length,
+         month = ordered(month_of_year, 
+                        levels = 3:11, 
+                        labels = month.abb[3:11])) -> daily_PAR.tb
+daily_PAR.tb
+```
+We next reformat the daily summaries from wide to long shaped data frames to facilitate their plotting.
+
+```{r, results='hide'}
+daily_PAR.tb |>
+  select(day_of_year:calendar_year, month, PAR30umol.run.hours:PAR1000umol.run.hours, day.length) |>
+  pivot_longer(cols = PAR30umol.run.hours:PAR1000umol.run.hours,
+               names_to = "Threshold",
+               values_to = "Duration",
+               names_prefix = "PAR\\.|PAR") |>
+  mutate(Threshold = gsub("\\.run\\.hours$", "", Threshold),
+         #         Threshold = gsub("^5", "0.5", Threshold),
+         Threshold = gsub("umol", "", Threshold),
+         Threshold.units = paste("Q[PAR]>\"", 
+                                 format(as.numeric(Threshold), 
+                                        digits = 2, 
+                                        nsmall = 0, 
+                                        width = 0), 
+                                 "\"~mu*mol~m^{-2}~s^{-1}", sep = ""),
+         Threshold = factor(Threshold),
+         Threshold.units = factor(Threshold.units)) -> daily_PAR_run_max_long.tb
+
+levels(daily_PAR_run_max_long.tb$Threshold)
+daily_PAR_run_max_long.tb
+```
+
+```{r, results='hide'}
+daily_PAR.tb |>
+  select(day_of_year:calendar_year, month, PAR30umol.time.rel:PAR1000umol.time.rel, day.length) |>
+  pivot_longer(cols = PAR30umol.time.rel:PAR1000umol.time.rel,
+               names_to = "Threshold",
+               values_to = "Fraction",
+               names_prefix = "PAR\\.|PAR") |>
+  mutate(Threshold = gsub("\\.time\\.rel$", "", Threshold),
+         #         Threshold = gsub("^5", "0.5", Threshold),
+         Threshold = gsub("umol$", "", Threshold),
+         Threshold.units = paste("Q[PAR]>\"", 
+                                 format(as.numeric(Threshold), 
+                                        digits = 2, 
+                                        nsmall = 0, 
+                                        width = 0), 
+                                 "\"~mu*mol~m^{-2}~s^{-1}", sep = ""),
+         Threshold = factor(Threshold),
+         Threshold.units = factor(Threshold.units)) -> daily_PAR_time_rel_long.tb
+
+levels(daily_PAR_time_rel_long.tb$Threshold)
+daily_PAR_time_rel_long.tb
+```
+
+```{r, results='hide'}
+daily_PAR.tb |>
+  select(day_of_year:calendar_year, month, PAR30umol.hours:PAR1000umol.hours, day.length) |>
+  pivot_longer(cols = PAR30umol.hours:PAR1000umol.hours,
+               names_to = "Threshold",
+               values_to = "Duration",
+               names_prefix = "PAR\\.|PAR") |>
+  mutate(Threshold = gsub("\\.hours$", "", Threshold),
+         #         Threshold = gsub("^5", "0.5", Threshold),
+         Threshold = gsub("umol$", "", Threshold),
+         Threshold.units = paste("Q[PAR]>\"", 
+                                 format(as.numeric(Threshold), 
+                                        digits = 2, 
+                                        nsmall = 0, 
+                                        width = 0), 
+                                 "\"~mu*mol~m^{-2}~s^{-1}", sep = ""),
+         Threshold = factor(Threshold),
+         Threshold.units = factor(Threshold.units)) -> daily_PAR_hours_long.tb
+
+levels(daily_PAR_hours_long.tb$Threshold)
+daily_PAR_hours_long.tb
+```
+
+# PAR daily light integrals
+
+The PAR DLI estimates will be used as a reference in this analysis @fig-PAR-DLI. Even when plotted on logarithmic scale the distribution remains skewed with a concentration of high irradiance values and very long tail towards "dark" days. Given the large number of observations, estimates for the mean have narrow 99% confidence intervals, showing month-to-month variation on a smooth arc.
+
+```{r, warning=FALSE}
+#| label: fig-PAR-DLI
+#| echo: false
+#| fig-width: 7
+#| fig-asp: 0.7
+#| fig-cap: "Daily Light Integrals (DLI) for PAR. Computed from measurements 1 min means of measurements once every 5 s or 10 s. _Violins_ show the empirical probability density distributions, red dots and bars show show means 99% confidence intervals for the mean. Blue dots show the medians."
+
+PAR.DLI.fig <-
+ggplot(daily_PAR.tb, aes(month, PAR.DLI)) +
+  geom_violin(fill = "grey90") +
+  stat_summary(fun = "median", size = 0.3, colour = "cornflowerblue") +
+  stat_summary(fun.data = "mean_cl_boot", size = 0.3, linewidth = 0.7,
+               fun.args = list(conf.int=.99), colour = "red") +
+  stat_panel_counts() +
+  scale_y_log10(limits = c(0.2, NA), breaks = c(1, 2, 5, 10, 20, 50, 100)) +
+  expand_limits(y = 100) +
+  labs(x = "Month", 
+       y = expression("PAR daily light integral  "*(mol~m^{-2}~d^{-1})))
+PAR.DLI.fig
+```
+## Daily duration of PAR exposure
+
+
+```{r, warning=FALSE}
+#| label: fig-PAR-hours
+#| echo: false
+#| fig-width: 7
+#| fig-asp: 1
+#| fig-cap: "Total time per day with PAR photon irradiance higher than different thersholds. Computed from 1 min means of measurements once every 5 s or 10 s. Red points and error bars are means and 99% confidence intervals for the mean; blue points are medians. The yellow columns show the length of the day."
+ggplot(daily_PAR_hours_long.tb, aes(month, Duration)) +
+  stat_summary(aes(y = day.length),
+               fun = "mean", geom = "col", alpha = 0.5, fill = "wheat") +
+  stat_panel_counts() +
+  geom_point(alpha = 0.15, position = position_jitter(width = 0.35)) +
+  stat_summary(fun = "median", linewidth = 1,
+               color = "cornflowerblue") +
+  stat_summary(fun.data = "mean_cl_boot", linewidth = 1,
+               fun.args = list(conf.int=.99), color = "red") +
+  labs(x = "Month", 
+       y = "Time with PAR irradiance above threshold (h / d)") +
+  facet_wrap(facets = vars(Threshold.units), labeller = label_parsed)
+```
+
+```{r, warning=FALSE}
+#| label: fig-PAR-days
+#| echo: false
+#| fig-width: 7
+#| fig-asp: 1
+#| fig-cap: "Proportion of days with at least 5 h of uninterrupted PAR photon irradiance higher than different thersholds. Computed from 1 min means of measurements once every 5 s, each grey point is the value for one year. Red points are based on pooled data across years."
+ggplot(daily_PAR_run_max_long.tb, aes(month, Duration)) +
+  geom_hline(yintercept = 1, color = "wheat", linewidth = 1) +
+  stat_panel_counts(label.y = "bottom", label.x = "center") +  
+  stat_summary(aes(group = calendar_year), 
+               geom = "point",
+               fun = function(x) {sum(x > 5) / length(x)}, alpha = 0.33,
+               position = position_jitter(width = 0.1, height = 0), size = 2) +
+  stat_summary(fun = function(x) {sum(x > 5) / length(x)}, alpha = 0.66, color = "red") +
+  labs(x = "Month", 
+       y = "Days with > 5 h with PAR irradiance > threshold (fraction)") +
+  facet_wrap(facets = vars(Threshold.units), labeller = label_parsed)
+```
+
+# Photon ratios
+
+```{r}
+kde_probs <- c(0.95, 0.85, 0.5)
+kde_caption <-  "Quantile polynomial regression: blue = median, green = quartiles" # ,\norange = 10% and 90% percentiles, red = 5% and 95% percentiles
+kde_labs <-  
+  labs(caption = kde_caption,
+      title = "Quantile regression and highest density regions",
+      subtitle = "Irradiance, 1 min means, for sun elevation > 0 degrees. 1 May to 30 October")
+quantile_poly_layers <- function(degree = 1) {
+  list(
+    stat_quantile(formula = y ~ poly(x, degree), 
+                  quantiles = 0.5,
+                  size = 0.75,
+                  color = "blue",
+                  method.args = list(method = "fn")),
+    stat_quantile(formula = y ~ poly(x, degree), 
+                  quantiles = c(0.25, 0.75),
+                  size = 0.75,
+                  color = "green",
+                  method.args = list(method = "fn"))#,
+    # stat_quantile(formula = y ~ poly(x, degree), 
+    #               quantiles = c(0.1, 0.9),
+    #               size = 0.75,
+    #               color = "orange",
+    #               method.args = list(method = "fn")),
+    # stat_quantile(formula = y ~ poly(x, degree), 
+    #               quantiles = c(0.05, 0.95),
+    #               size = 0.75,
+    #               color = "red",
+    #               method.args = list(method = "fn"))
+  )
+}
+
+quantile_bs_layers <- function(degree = 3, ...) {
+  list(
+    stat_quantile(formula = y ~ bs(x, degree = degree, ...), 
+                  quantiles = 0.5,
+                  size = 0.75,
+                  color = "blue",
+                  method.args = list(method = "sfn")),
+    stat_quantile(formula = y ~ bs(x, degree = degree, ...), 
+                  quantiles = c(0.25, 0.75),
+                  size = 0.75,
+                  color = "green",
+                  method.args = list(method = "sfn")) #,
+    # stat_quantile(formula = y ~ bs(x, degree = degree, ...), 
+    #               quantiles = c(0.1, 0.9),
+    #               size = 0.75,
+    #               color = "orange",
+    #               method.args = list(method = "sfn")),
+    # stat_quantile(formula = y ~ bs(x, degree = degree, ...), 
+    #               quantiles = c(0.05, 0.95),
+    #               size = 0.75,
+    #               color = "red",
+    #               method.args = list(method = "sfn"))
+  )
+}
+
+# quantile_layers <- quantile_bs_layers
+quantile_layers <- quantile_poly_layers
+```
+
+```{r}
+diff_facets <- facet_grid(~factor(ifelse(PAR_diff_fr <= 0.5, 
+                                         "Diffuse PAR <= 50%",
+                                         ifelse(PAR_diff_fr <= 0.80,
+                                                "50% < Diffuse PAR <= 80%",
+                                                "80% < Diffuse PAR")),
+                                  levels = c("Diffuse PAR <= 50%",
+                                             "50% < Diffuse PAR <= 80%",
+                                             "80% < Diffuse PAR")))
+```
+
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, red_far_red) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, red_far_red)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+  geom_hline(yintercept = 1.16,  linetype = "dashed", color = "red") +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "R:FR, spectral irradiance ratio") +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  scale_y_continuous(breaks = c(0.5, 1.0, 1.16, 1.5), limits = c(0.2, 3.5)) +
+  coord_cartesian(ylim = c(0.35, 1.75)) +
+  expand_limits(x = c(-20, 60)) -> rfr_sun_elev_loess.fig
+rfr_sun_elev_loess.fig
+```
+
+
+```{r, warning=FALSE}
+minutes.df %>%
+  select(sun_elevation, blue_red_sq) %>%
+  na.omit() %>%
+  ggplot(aes(sun_elevation, blue_red_sq)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  stat_hdr(probs = kde_probs) +
+#  geom_smooth(na.rm = TRUE) +
+#  geom_hline(yintercept = 1.16,  linetype = "dashed", color = "red") +
+  labs(x = "Solar elevation angle (degrees)",
+       y = "B:R, spectral irradiance ratio") +
+  ylim(0.1, 20) +
+  stat_quadrant_counts(quadrants = 0L, 
+                       label.x = 0.9, 
+                       label.y = 0.05) +
+  coord_cartesian(ylim = c(-0.1, 4)) +
+  expand_limits(x = c(-20, 60)) -> blue_red_sun_elev_loess.fig
+blue_red_sun_elev_loess.fig
+```
+

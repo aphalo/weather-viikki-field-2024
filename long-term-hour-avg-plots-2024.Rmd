@@ -69,7 +69,7 @@ par_month_rigdes.fig +
 
 
 ```{r}
-pdf("figures-pdf-2024/par-month-ridges-fig.pdf", width = 10, height = 6)
+pdf("figures-pdf/par-month-ridges-fig.pdf", width = 10, height = 6)
 print(par_month_rigdes.fig)
 dev.off()
 ```

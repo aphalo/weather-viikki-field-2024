@@ -6,17 +6,47 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
+Note: this data set is large. Processing 1 month worth of data may require more
+than 8GB RAM, and running taking several tens of minutes to one hour on a fast
+workstation.
+
+Clean up workspace!
+
+```{r}
+rm(list = ls(pattern = "*"))
+```
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(tidy = FALSE, echo = TRUE)
+make.plots <- TRUE # make plots or skip them
 ```
 
 # News
 
-Logging started to 50 ms on 2024-04-15.
+[2024-04-15] 
 
-For 50 ms to work the notch frequency had to be increased from to 500 Hz.
+Logging at 50 ms started with only the CS/Apogee PAR sensor. Logging active
+from minute 5 to minute 10 in each hour, as long as PAR > 1 umol m-2 s-1.
+
+For 50 ms to work the notch frequency had to be increased to 500 Hz.
 This decreased the noise-reducing averaging per individual data 
 acquisition+conversion from approximately 200 ms to 20 ms.
+
+[2024-08-09] 
+
+Connected 5 sglux fast (< 5 ms time constant) sensors in place of Campbell 107 
+thermistors. Added sampling if these sensors to the Millisecond table.
+
+Logging at 50 ms continue with the CS/Apogee PAR sensor and the 5 sglex sensors. 
+Logging active from minute 5 to minute 10 in each 1/4 hour, as long as PAR > 1 
+umol m-2 s-1.
+
+Logging started with the 5 sglux sensors not powered, which gave a slightly 
+negative reading. Some time later I put black caps to measure the dark signal
+getting a very small positive reading,
+
+Later I moved the 5 sensors into a rather open faba bean canopy in the inter 
+row.
 
 # Import and preprocessing of the data logged at 1 s intervals
 
@@ -43,11 +73,17 @@ We read the 50-ms-interval data for whole period. These data are only for and fo
 When downloading data from the logger we append it to the existing file. A new file is started when the data tables change, i.e., when the edits to the logger program modifies the structure of a data table. This resetting is done per table. From time to time, such as once per year, I force a flushing of old data, even when data tables have not changed. 
 
 ```{r}
+# read previous
+# millisecond_raw.tb <- read_csi_dat(file = "data-latest/Viikki Tower_TableMilliSecond.dat.backup", locale = locale_UTC)
+
+# read current
 millisecond_raw.tb <- read_csi_dat(file = "data-latest/Viikki Tower_TableMilliSecond.dat", locale = locale_UTC)
 
 millisecond_raw.tb
 nrow(millisecond_raw.tb)
 ncol(millisecond_raw.tb)
+
+range(millisecond_raw.tb$TIMESTAMP)
 ```
 
 ```{r}
@@ -92,22 +128,23 @@ FALSE) or not (sunny = TRUE).
   # NEW CR6 program
 millisecond_raw.tb %>%
   filter(!is.na(TIMESTAMP)) %>%
-  mutate(year = year(TIMESTAMP),
-         month_of_year = month(TIMESTAMP),
+  rename(time = TIMESTAMP) |>
+  mutate(year = year(time),
+         month_of_year = month(time),
          month_name = factor(month_of_year, levels = 12:1, labels = rev(month.name)),
-         week_of_year = week(TIMESTAMP),
-         day_of_year = yday(TIMESTAMP),
-         time_of_day_utc = as_tod(TIMESTAMP),
-         solar_time_h = solar_time(TIMESTAMP, 
+         week_of_year = week(time),
+         day_of_year = yday(time),
+         time_of_day_utc = as_tod(time),
+         solar_time_h = solar_time(time, 
                                    geocode = viikki_bio3.geo),
-         solar_time_s = solar_time(TIMESTAMP, 
+         solar_time_s = solar_time(time, 
                                    geocode = viikki_bio3.geo, 
                                    unit.out = "seconds"),
-         sun_elevation = sun_elevation(TIMESTAMP, 
+         sun_elevation = sun_elevation(time, 
                                        geocode = viikki_bio3.geo, 
                                        use.refraction = TRUE,
                                        tz = "UTC"),
-         sun_azimuth = sun_azimuth(TIMESTAMP, 
+         sun_azimuth = sun_azimuth(time, 
                                    geocode = viikki_bio3.geo, 
                                    use.refraction = TRUE,
                                    tz = "UTC")) -> millisecond.tb
@@ -118,12 +155,15 @@ colnames(millisecond.tb)
 ```
 
 ```{r}
-obj.name <- paste("millisecond_", year(millisecond_raw.tb$TIMESTAMP[1]),
+
+series.name <- paste(year(millisecond_raw.tb$TIMESTAMP[1]),
                   "_", month(millisecond_raw.tb$TIMESTAMP[1]), 
                   "_", day(millisecond_raw.tb$TIMESTAMP[1]), ".tb", sep = "")
+obj.name <- paste("millisecond_", series.name, sep = "")
+
 assign(obj.name, millisecond.tb)
 
-save(list = obj.name, file = paste("data-rda/", obj.name, ".rda", sep = ""))
+save(list = obj.name, file = paste("data-rda-partial/", obj.name, ".rda", sep = ""))
 ```
 
 
@@ -134,175 +174,107 @@ millisecond.tb %>%
   tail()
 ```
 
-```{r}
+## Compute 1 s mean for cross-calibration
+
+```{r, eval=TRUE}
+# second.tb$time.minute <- floor_date(second.tb$time, unit = "minute")
+
+millisecond.tb |>
+  mutate(time.second = trunc(time, units = "secs") + seconds(1)) |> # match FMI timing
+  group_by(time.second) |>
+  summarize(across(time, first, .names = "{.col}_start"),
+            across(time, last, .names = "{.col}_end"),
+            across(year:day_of_year, first, .names = "{.col}"),
+            across(time_of_day_utc:sun_azimuth, median, .names = "{.col}"),
+            across(PAR_Den_CS:Greenf_Den, mean, .names = "{.col}"),
+            n = n(),
+            incomplete.data = n < 20,
+            bad.data = n < 15) |>
+  ungroup() |>
+  mutate(time.second = as.POSIXct(time.second)) |>
+  rename(time = time.second) -> second_avg.tb
+
+print(second_avg.tb)
+colnames(second_avg.tb)
+```
+
+
+
+```{r, eval=TRUE}
+second_avg.tb %>%
+  head()
+second_avg.tb %>%
+  tail()
+```
+
+```{r, eval=TRUE}
+obj.name <- paste("second_calc_", series.name, sep = "")
+assign(obj.name, second_avg.tb)
+
+save(list = obj.name, file = paste("data-rda-partial/", obj.name, ".rda", sep = ""))
+```
+
+## Compute 1 min mean for cross-calibration
+
+```{r, eval=TRUE}
+# second.tb$time.minute <- floor_date(second.tb$time, unit = "minute")
+
+millisecond.tb |>
+  mutate(time.minute = trunc(time, units = "mins") + minutes(1)) |> # match FMI timing
+  group_by(time.minute) |>
+  summarize(across(time, first, .names = "{.col}_start"),
+            across(time, last, .names = "{.col}_end"),
+            across(year:day_of_year, first, .names = "{.col}"),
+            across(time_of_day_utc:sun_azimuth, median, .names = "{.col}"),
+            across(PAR_Den_CS:Greenf_Den, mean, .names = "{.col}"),
+            n = n(),
+            incomplete.data = n < 20 * 60,
+            bad.data = n < 15 * 60) |>
+  ungroup() |>
+  mutate(time.minute = as.POSIXct(time.minute)) |>
+  rename(time = time.minute) -> minute_avg.tb
+
+print(minute_avg.tb)
+colnames(minute_avg.tb)
+```
+
+
+
+```{r, eval=TRUE}
+minute_avg.tb %>%
+  head()
+minute_avg.tb %>%
+  tail()
+```
+
+```{r, eval=TRUE}
+obj.name <- paste("minute_fast_calc_", series.name, sep = "")
+assign(obj.name, minute_avg.tb)
+
+save(list = obj.name, file = paste("data-rda-partial/", obj.name, ".rda", sep = ""))
+```
+
+## Plots
+
+```{r, eval=make.plots}
 ggplot(millisecond.tb[-1, ], aes(PAR_Den_CS)) +
-  stat_density() +
-  scale_x_continuous(limits = function(x) {c(x[1] - 100, x[2] + 20)})
+  stat_density(fill = "grey50") +
+  stat_panel_counts(label.x = "center") +
+  geom_vline(xintercept = range(millisecond.tb$PAR_Den_CS), colour = "red") +
+  scale_x_continuous(limits = function(x) {c(x[1] - 100, x[2] + 20)}) +
+  theme_bw()
 ```
 
-```{r}
-ggplot(millisecond.tb[-1, ], aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
+```{r, eval=make.plots}
+ggplot(millisecond.tb[-1, ], aes(time, PAR_Den_CS)) +
+#  geom_line() +
+  geom_point(size = 0.2) +
   expand_limits(y = 0)
 ```
 
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 1:00") & TIMESTAMP < ymd_hm("2024-06-07 1:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
-  expand_limits(y = 0)
-
-```
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 2:00") & TIMESTAMP < ymd_hm("2024-06-07 2:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
-  expand_limits(y = 0)
-
-```
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 3:00") & TIMESTAMP < ymd_hm("2024-06-07 3:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
-  expand_limits(y = 0)
-
-```
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 4:00") & TIMESTAMP < ymd_hm("2024-06-07 4:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
-  expand_limits(y = 0)
-
-```
-
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 5:00") & TIMESTAMP < ymd_hm("2024-06-07 5:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
-  expand_limits(y = 0)
-
-```
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 6:00") & TIMESTAMP < ymd_hm("2024-06-07 6:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
-  expand_limits(y = 0)
-
-```
-
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 7:00") & TIMESTAMP < ymd_hm("2024-06-07 7:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
-  expand_limits(y = 0)
-```
-`
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 8:00") & TIMESTAMP < ymd_hm("2024-06-07 8:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
-  expand_limits(y = 0)
-
-```
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 9:00") & TIMESTAMP < ymd_hm("2024-06-07 9:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
-  expand_limits(y = 0)
-
-```
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 10:00") & TIMESTAMP < ymd_hm("2024-06-07 10:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
-  expand_limits(y = 0)
-
-```
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 11:00") & TIMESTAMP < ymd_hm("2024-06-07 11:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
-  expand_limits(y = 0)
-
-```
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 12:00") & TIMESTAMP < ymd_hm("2024-06-07 12:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
-  expand_limits(y = 0)
-
-```
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 13:00") & TIMESTAMP < ymd_hm("2024-06-07 13:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
-  expand_limits(y = 0)
-
-```
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 14:00") & TIMESTAMP < ymd_hm("2024-06-07 14:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
-  expand_limits(y = 0)
-
-```
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 15:00") & TIMESTAMP < ymd_hm("2024-06-07 15:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
-  expand_limits(y = 0)
-
-```
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 16:00") & TIMESTAMP < ymd_hm("2024-06-07 16:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
-  expand_limits(y = 0)
-
-```
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 17:00") & TIMESTAMP < ymd_hm("2024-06-07 17:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  expand_limits(y = 0)
-
-```
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 19:00") & TIMESTAMP < ymd_hm("2024-06-07 19:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  expand_limits(y = 0)
-
-```
-
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hm("2024-06-07 18:00") & TIMESTAMP < ymd_hm("2024-06-07 18:15")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
-  expand_limits(y = 0)
-
-```
-
-```{r}
-ggplot(subset(millisecond.tb[-1, ], TIMESTAMP > ymd_hms("2024-05-10 15:03:30") & TIMESTAMP < ymd_hms("2024-05-10 15:03:45")), aes(TIMESTAMP, PAR_Den_CS)) +
-  geom_line() +
-  stat_panel_counts(label.y = "bottom") +
+```{r, eval=make.plots}
+subset(millisecond.tb, time > (max(time) - days(1))) |>
+ggplot(aes(time, PAR_Den_CS)) +
+  geom_point(size = 0.2) +
   expand_limits(y = 0)
 ```

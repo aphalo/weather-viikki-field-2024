@@ -25,32 +25,32 @@ hour_2024_latest.tb |>
   mutate(time.day = floor_date(time, "day"), .before = "time") |>
   group_by(time.day) |>
   summarise(# above ground
-            PAR_umol_mean = mean(PAR_umol_mean),
+            PAR_umol_mean = mean(PAR_umol_mean, na.rm = TRUE),
             PAR_mol_day = PAR_umol_mean * 0.0864, # 3600 * 24 * 1e-6
             PAR_umol_min = min(PAR_umol_min, na.rm = TRUE),
             PAR_umol_max = max(PAR_umol_max, na.rm = TRUE),
 
-            UVB_umol_mean = mean(UVB_umol_mean),
+            UVB_umol_mean = mean(UVB_umol_mean, na.rm = TRUE),
             UVB_mol_day = UVB_umol_mean * 0.0864, # 3600 * 24 * 1e-6
             UVB_umol_min = min(UVB_umol_min, na.rm = TRUE),
             UVB_umol_max = max(UVB_umol_max, na.rm = TRUE),
 
-            UVA2_umol_mean = mean(UVA2_umol_mean),
+            UVA2_umol_mean = mean(UVA2_umol_mean, na.rm = TRUE),
             UVA2_mol_day = UVA2_umol_mean * 0.0864, # 3600 * 24 * 1e-6
             UVA2_umol_min = min(UVA2_umol_min, na.rm = TRUE),
             UVA2_umol_max = max(UVA2_umol_max, na.rm = TRUE),
 
-            UVA1_umol_mean = mean(UVA1_umol_mean),
+            UVA1_umol_mean = mean(UVA1_umol_mean, na.rm = TRUE),
             UVA1_mol_day = UVA1_umol_mean * 0.0864, # 3600 * 24 * 1e-6
             UVA1_umol_min = min(UVA1_umol_min, na.rm = TRUE),
             UVA1_umol_max = max(UVA1_umol_max, na.rm = TRUE),
 
-            UVA_umol_mean = mean(UVA_umol_mean),
+            UVA_umol_mean = mean(UVA_umol_mean, na.rm = TRUE),
             UVA_mol_day = UVA_umol_mean * 0.0864, # 3600 * 24 * 1e-6
             UVA_umol_min = min(UVA_umol_min, na.rm = TRUE),
             UVA_umol_max = max(UVA_umol_max, na.rm = TRUE),
 
-            global_watt_mean = mean(global_watt_mean),
+            global_watt_mean = mean(global_watt_mean, na.rm = TRUE),
             global_MJ_day = global_watt_mean * 0.0864, # 3600 * 24 * 1e-6
             global_watt_min = min(global_watt_min, na.rm = TRUE),
             global_watt_max = max(global_watt_max, na.rm = TRUE),
@@ -79,9 +79,9 @@ hour_2024_latest.tb |>
             rain_mm_day = sum(rain_mm_h, na.rm = TRUE),
             n_minutes = sum(n),
 
-            across(PAR_diff_fr_rel_mean:air_vpd_mean, mean),
-            across(PAR_diff_fr_rel_max:air_vpd_max, max),
-            across(PAR_diff_fr_rel_min:air_vpd_min, min),
+            across(logged_air_temp_C_mean:air_vpd_mean, mean),
+            across(logged_air_temp_C_max:air_vpd_max, max),
+            across(logged_air_temp_C_min:air_vpd_min, min),
 
             ET_ref_FAO56_mm_day = ET_ref_FAO56_mean * 24,
             ET_ref_short_mm_day = ET_ref_short_mean * 24,

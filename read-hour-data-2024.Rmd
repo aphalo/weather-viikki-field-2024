@@ -6,6 +6,12 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
+Clean up workspace!
+
+```{r}
+rm(list = ls(pattern = "*"))
+```
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(tidy = FALSE, echo = TRUE)
 ```
@@ -85,10 +91,11 @@ nrow(hour.tb)
 
 ```{r}
 obj.name <- paste("hour_", year(hour_raw.tb$TIMESTAMP[1]),
-                  "_", month(hour_raw.tb$TIMESTAMP[1]), ".tb", sep = "")
+                  "_", month(hour_raw.tb$TIMESTAMP[1]), 
+                  "_", day(hour_raw.tb$TIMESTAMP[1]), ".tb", sep = "")
 assign(obj.name, hour.tb)
 
-save(list = obj.name, file = paste("data-rda/", obj.name, ".rda", sep = ""))
+save(list = obj.name, file = paste("data-rda-partial/", obj.name, ".rda", sep = ""))
 ```
 
 

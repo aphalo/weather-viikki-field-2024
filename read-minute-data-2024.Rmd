@@ -6,6 +6,12 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
+Clean up workspace!
+
+```{r}
+rm(list = ls(pattern = "*"))
+```
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(tidy = FALSE, echo = TRUE)
 ```
@@ -67,6 +73,8 @@ minute_raw.tb <- read_csi_dat(file = "data-latest/Viikki Tower_TableMinute.dat",
 minute_raw.tb
 nrow(minute_raw.tb)
 ncol(minute_raw.tb)
+
+range(minute_raw.tb$TIMESTAMP)
 ```
 
 ```{r}
@@ -79,6 +87,7 @@ cat(comment(minute_raw.tb))
 
 Sometimes after changes in the logger program data already downloaded has been
 appended to files, leading to duplicate rows.
+
 ```{r}
 rle.check <- rle(sort(as.numeric(minute_raw.tb$TIMESTAMP)))
 duplicates <- sum(rle.check$lengths > 1)
@@ -102,20 +111,32 @@ tz(minute_raw.tb[["TIMESTAMP"]][1])
 ```
 
 ```{r}
-load("data-rda/minute_calc_2024_5_14.tb.rda")
+series.name <- paste(year(minute_raw.tb$TIMESTAMP[1]),
+                  "_", month(minute_raw.tb$TIMESTAMP[1]), 
+                  "_", day(minute_raw.tb$TIMESTAMP[1]), sep = "")
+obj.name <- paste("minute_", series.name, ".tb", sep = "")
+calc.obj.name <- paste("minute_calc_", series.name, ".tb", sep = "") 
+```
+
+Irradiances are calculated from data logged at 1/2 second intervals during the
+same period. These are calculated in a separate script and here joined with the
+weather data actually logged at 1 minute interval.
+
+```{r}
+load(paste("data-rda-partial/", calc.obj.name, ".rda", sep = ""))
+minute_calc.tb <- get(calc.obj.name)
 names(minute_raw.tb) <- gsub("_Avg$", "", names(minute_raw.tb))
-minute.tb <- full_join(minute_calc_2024_5_14.tb, minute_raw.tb, by = c("time.minute" = "TIMESTAMP"))
+
+minute.tb <- full_join(minute_calc.tb, minute_raw.tb, by = c("time" = "TIMESTAMP"))
+minute.tb <- minute.tb[order(minute.tb$time), ] # ensure data are ordered
 colnames(minute.tb)
 ```
 
 ```{r}
-obj.name <- paste("minute_", year(minute_raw.tb$TIMESTAMP[1]),
-                  "_", month(minute_raw.tb$TIMESTAMP[1]), ".tb", sep = "")
 assign(obj.name, minute.tb)
 
-save(list = obj.name, file = paste("data-rda/", obj.name, ".rda", sep = ""))
+save(list = obj.name, file = paste("data-rda-partial/", obj.name, ".rda", sep = ""))
 ```
-
 
 ```{r}
 minute.tb %>%
@@ -123,3 +144,4 @@ minute.tb %>%
 minute.tb %>%
   tail()
 ```
+

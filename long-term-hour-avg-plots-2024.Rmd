@@ -280,8 +280,8 @@ hour_2024_latest.tb %>%
 #  filter(sun_elevation > 0 & PAR_Den_Avg > 5) %>%
   select(time, R_0_mean, R_0_min, R_0_max) %>%
   ggplot(aes(time)) +
-  geom_line(aes(y = R_0_min), colour = "blue") +
-  geom_line(aes(y = R_0_max), colour = "red") +
+  # geom_line(aes(y = R_0_min), colour = "blue") +
+  # geom_line(aes(y = R_0_max), colour = "red") +
   geom_line(aes(y = R_0_mean)) +
   labs(y = expression("AM0 radiation (estimate) "*(W~m^{-2})), x = "Time") -> 
 R_rel.fig

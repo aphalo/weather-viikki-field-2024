@@ -6,6 +6,12 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
+Clean up workspace!
+
+```{r}
+rm(list = ls(pattern = "*"))
+```
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(tidy = FALSE, echo = TRUE)
 ```
@@ -48,9 +54,12 @@ We read the minute interval data for whole periods. When downloading data from t
 ```{r}
 second_raw.tb <- read_csi_dat(file = "data-latest/Viikki Tower_TableSecond.dat", locale = locale_UTC)
 
-second_raw.tb
+head(second_raw.tb, 50)
+tail(second_raw.tb, 50)
 nrow(second_raw.tb)
 ncol(second_raw.tb)
+
+range(second_raw.tb$TIMESTAMP)
 ```
 
 ```{r}
@@ -65,6 +74,7 @@ cat(comment(second_raw.tb))
 
 Sometimes after changes in the logger program data already downloaded has been
 appended to files, leading to duplicate rows.
+
 ```{r}
 rle.check <- rle(sort(as.numeric(second_raw.tb$TIMESTAMP)))
 duplicates <- sum(rle.check$lengths > 1)
@@ -72,6 +82,9 @@ if (duplicates > 0L) {
   message("Found ", duplicates, " duplicated rows in data.")
   second_raw.tb <- distinct(second_raw.tb, TIMESTAMP, .keep_all = TRUE)
 }
+
+head(second_raw.tb, 50)
+tail(second_raw.tb, 50)
 ```
 
 TIMESTAMP values are as logged. Since 2021, i.e., well before the start of this faster measurements has been kept within 1-5 seconds of UTC + 2 h. As a precaution, we check anyway for forward and backward gaps in the time series with durations between 30 and 90 min.
@@ -95,6 +108,10 @@ second_raw.tb[["TIMESTAMP"]] <-  second_raw.tb[["TIMESTAMP"]] - hours(2) # UTC +
 second_raw.tb[["TIMESTAMP"]][1]
 second_raw.tb[["TIMESTAMP"]][nrow(second_raw.tb)]
 tz(second_raw.tb[["TIMESTAMP"]][1])
+
+head(second_raw.tb, 50)
+tail(second_raw.tb, 50)
+
 ```
 Except for the Skye R+FR and sglux sensors calibrations are applied in the logger. For these channels we have mV. The calibrations are adjusted later, in all cases. 
 
@@ -112,34 +129,40 @@ In the next code chunk we do the following:
   # NEW CR6 program
 second_raw.tb |>
   filter(!is.na(TIMESTAMP)) |>
-  mutate(red_umol = ifelse(Red_Den_cal > 0, Red_Den_cal, 0),
-         far_red_umol = ifelse(Far_red_Den_cal > 0, Far_red_Den_cal, 0),
-         # Ratio is discarded if it is "too dark"
-         # A reasonable cut off seems to be at 0.05 umol m-2 s-1.
+  rename(time = TIMESTAMP) |>
+  mutate(red_umol = Red_Den_cal,
+         far_red_umol = Far_red_Den_cal,
          PAR_diff_fr_raw = PAR_BF_diff/PAR_BF_tot,
          # PAR readings from BF5 are noisy and start being unreliable at
-         # a relatively high irradiance of 10 umol m-2 s-1.
+         # a relatively high diffuse irradiance of 10 umol m-2 s-1.
          PAR_diff_fr = ifelse(PAR_BF_diff < 10,
                               NA_real_,
                               PAR_diff_fr_raw),
-         year = year(TIMESTAMP),
-         month_of_year = month(TIMESTAMP),
+         year = year(time),
+         month_of_year = month(time),
          month_name = factor(month_of_year, levels = 12:1, labels = rev(month.name)),
-         week_of_year = week(TIMESTAMP),
-         day_of_year = yday(TIMESTAMP),
-         time_of_day_utc = as_tod(TIMESTAMP),
-         solar_time_h = solar_time(TIMESTAMP, 
+         week_of_year = week(time),
+         day_of_year = yday(time),
+         time_of_day_utc = as_tod(time),
+         solar_time_h = solar_time(time, 
                                    geocode = viikki_bio3.geo),
-         sun_elevation = sun_elevation(TIMESTAMP, 
+         sun_elevation = sun_elevation(time, 
                                        geocode = viikki_bio3.geo, 
                                        use.refraction = TRUE,
                                        tz = "UTC"),
-         sun_azimuth = sun_azimuth(TIMESTAMP, 
+         sun_azimuth = sun_azimuth(time, 
                                    geocode = viikki_bio3.geo, 
                                    use.refraction = TRUE,
                                    tz = "UTC"),
          PAR_diff_fr_rel = 1 - ((1 - PAR_diff_fr) / (1 - clear_sky_diff_fr(sun_elevation))),
-         sunny = PAR_diff_fr_rel < 0.6) -> second.tb
+         sunny = PAR_diff_fr_rel < 0.6,
+         solar_disk = factor(sunny,
+                             levels = c(FALSE, TRUE),
+                             labels = c("occluded", "visible"))) -> second.tb
+
+head(second.tb, 50)
+tail(second.tb, 50)
+
 ```
 
 We set the sunny flag based on the observed relative PAR fraction compared to that expected under clear sky for the same sun elevation. This is approximate but work fairly well as the distribution is markedly bimodal.
@@ -149,12 +172,6 @@ colnames(second.tb)
 second.tb[1, ]
 ```
 
-```{r}
-second.tb %>%
-  head()
-second.tb %>%
-  tail()
-```
 
 ```{r}
 series.name <- paste(year(second_raw.tb$TIMESTAMP[1]),
@@ -163,47 +180,53 @@ series.name <- paste(year(second_raw.tb$TIMESTAMP[1]),
 obj.name <- paste("second_", series.name, sep = "")
 assign(obj.name, second.tb)
 
-save(list = obj.name, file = paste("data-rda/", obj.name, ".rda", sep = ""))
+head(second.tb, 50)
+tail(second.tb, 50)
+
+save(list = obj.name, file = paste("data-rda-partial/", obj.name, ".rda", sep = ""))
 ```
 
-```{r}
-second.tb$time.minute <- floor_date(second.tb$TIMESTAMP, unit = "minute")
+Compute minute averages as they are no longer logged. Makes more sense to
+compute them before merging to avoid unnecessary recomputation.
 
-second.tb |> 
-  select(time.minute, PAR_Den_CS:PAR_diff_fr, PAR_diff_fr_rel) |> 
+```{r, eval=TRUE}
+# second.tb$time.minute <- floor_date(second.tb$time, unit = "minute")
+
+second.tb |>
+  mutate(time.minute = trunc(time, units = "mins") + minutes(1)) |> # match FMI timing
   group_by(time.minute) |>
-  summarise(across(PAR_Den_CS:PAR_diff_fr_rel, mean)) |>
-    mutate(year = year(time.minute),
-           month_of_year = month(time.minute),
-           month_name = factor(month_of_year, levels = 12:1, labels = rev(month.name)),
-           week_of_year = week(time.minute),
-           day_of_year = yday(time.minute),
-           time_of_day_utc = as_tod(time.minute),
-           solar_time_h = solar_time(time.minute, 
-                                     geocode = viikki_bio3.geo),
-           sun_elevation = sun_elevation(time.minute, 
-                                         geocode = viikki_bio3.geo, 
-                                         use.refraction = TRUE,
-                                         tz = "UTC"),
-           sun_azimuth = sun_azimuth(time.minute, 
-                                     geocode = viikki_bio3.geo, 
-                                     use.refraction = TRUE,
-                                     tz = "UTC"),
-           sunny = PAR_diff_fr_rel < 0.6) -> minute.tb
+  summarize(across(time, first, .names = "{.col}_start"),
+            across(time, last, .names = "{.col}_end"),
+            across(year:day_of_year, first, .names = "{.col}"),
+            across(time_of_day_utc:sun_azimuth, median, .names = "{.col}"),
+            across(PAR_Den:PAR_diff_fr, mean, .names = "{.col}"),
+            across(PAR_diff_fr_rel:sunny, mean, .names = "{.col}"),
+            sun_visible_fr = sum(solar_disk == "visible") / n(),
+            solar_disk = ifelse(sun_visible_fr < 0.5, "occluded", "visible"),
+            n = n(),
+            incomplete.data = n < 120,
+            bad.data = n < 100) |>
+  mutate(solar_disk = factor(solar_disk)) |>
+  ungroup() |>
+  mutate(time.minute = as.POSIXct(time.minute)) |>
+  rename(time = time.minute) -> minute.tb
+
+print(minute.tb)
+colnames(minute.tb)
 ```
 
 
-```{r}
+```{r, eval=TRUE}
 minute.tb %>%
   head()
 minute.tb %>%
   tail()
 ```
 
-```{r}
+```{r, eval=TRUE}
 obj.name <- paste("minute_calc_", series.name, sep = "")
 assign(obj.name, minute.tb)
 
-save(list = obj.name, file = paste("data-rda/", obj.name, ".rda", sep = ""))
+save(list = obj.name, file = paste("data-rda-partial/", obj.name, ".rda", sep = ""))
 ```
 

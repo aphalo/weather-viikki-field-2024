@@ -22,11 +22,14 @@ gc()
 viikki_wstation.geo <- data.frame(lon = 25.019212, lat = 60.226805,
                                   address = "Viikki weather station")
 
-load("data-rda/minute_2024_5.tb.rda")
-nrow(minute_2024_5.tb)
-colnames(minute_2024_5.tb)
-minute_2024_5.tb |>
-  mutate(series_start = time.minute[1],
+# First batch with logger program TowerViikki-024-05-fast
+
+load("data-rda-partial/minute_2024_5_14.tb.rda")
+tail(minute_2024_5_14.tb)
+nrow(minute_2024_5_14.tb)
+colnames(minute_2024_5_14.tb)
+minute_2024_5_14.tb |>
+  mutate(series_start = time[1],
          air_vp = water_RH2vp(RelHumidity, AirTemp),
          PAR_umol_LI = NA_real_, # PAR_Den_Avg * 1.26 / 1.06, #  / 0.948
          PAR_umol_CS = PAR_Den_CS / 0.946, # -0 - 50
@@ -51,13 +54,13 @@ minute_2024_5.tb |>
          surf_temp_C = ifelse(!is.na(surf_temp_C), surf_temp_C,
                               ifelse(is.na(SurfTemp_veg), SurfTemp_grnd, SurfTemp_veg))) |>
   select(series_start,
-         time = time.minute,
+         time,
          day_of_year,
          month_of_year,
          month_name,
          calendar_year = year,
-         time_of_day = time_of_day_utc,
-         solar_time = solar_time_h,
+         time_of_day_utc,
+         solar_time_h,
          sun_elevation,
          sun_azimuth,
          PAR_umol_LI,
@@ -84,14 +87,158 @@ minute_2024_5.tb |>
          rain_mm_min = Ramount_Tot,
          surf_temp_C = surf_temp_C,
          surf_temp_sensor_delta_C = surf_temp_sensor_delta_C,
-         was_sunny = sunny) -> minute_2024_5x.tb
+         was_sunny = sunny) -> minute_2024_5_14x.tb
+
+
+# Second batch with logger program TowerViikki-024-08-fast
+# Changes only to millisecond table, but cause a memory card reset
+# affecting all tables
+
+load("data-rda-partial/minute_2024_8_9.tb.rda")
+tail(minute_2024_8_9.tb)
+nrow(minute_2024_8_9.tb)
+colnames(minute_2024_8_9.tb)
+minute_2024_8_9.tb |>
+  mutate(series_start = time[1],
+         air_vp = water_RH2vp(RelHumidity, AirTemp),
+         PAR_umol_LI = NA_real_, # PAR_Den_Avg * 1.26 / 1.06, #  / 0.948
+         PAR_umol_CS = PAR_Den_CS / 0.946, # -0 - 50
+         PAR_umol = PAR_umol_CS,
+         PAR_umol_BF = PAR_BF_tot * 1.09 - 0.27,
+         blue_umol = Blue_Den * 0.881 / 0.902 - 0.944,
+         blue_sellaro_umol = Blue_Den * 0.637 / 0.902 - 0.561,
+         UVA_umol = UVA_Den * 0.2356 / 0.936 - 0.251,
+         UVB_umol = UVB_Den * 0.0046644 / 0.854 - 0.00437,
+         UVA1_umol = 0.73747 * UVA_umol + 0.03433 * blue_sellaro_umol,
+         UVA2_umol = 0.157966 * UVA_umol + 1.364312 * UVB_umol,
+         red_umol = red_umol * 5.18 / 1.050,
+         far_red_umol = far_red_umol * 5.12 / 1.02, # / 1.048
+         SurfTemp_veg = ifelse(SurfTemp_veg < -27 | SurfTemp_veg > 100,
+                               NA_real_,
+                               SurfTemp_veg),
+         SurfTemp_grnd = ifelse(SurfTemp_grnd < -27 | SurfTemp_grnd > 100,
+                                NA_real_,
+                                SurfTemp_grnd),
+         surf_temp_sensor_delta_C = SurfTemp_veg - SurfTemp_grnd,
+         surf_temp_C = (SurfTemp_veg + SurfTemp_grnd) / 2,
+         surf_temp_C = ifelse(!is.na(surf_temp_C), surf_temp_C,
+                              ifelse(is.na(SurfTemp_veg), SurfTemp_grnd, SurfTemp_veg))) |>
+  select(series_start,
+         time,
+         day_of_year,
+         month_of_year,
+         month_name,
+         calendar_year = year,
+         time_of_day_utc,
+         solar_time_h,
+         sun_elevation,
+         sun_azimuth,
+         PAR_umol_LI,
+         PAR_umol_CS,
+         PAR_umol_BF,
+         PAR_umol,
+         PAR_diff_fr,
+         global_watt = Solar_irrad,
+         red_umol,
+         far_red_umol,
+         blue_umol,
+         blue_sellaro_umol,
+         UVA_umol,
+         UVA1_umol,
+         UVA2_umol,
+         UVB_umol,
+         wind_speed = WindSpd_S_WVT,
+         wind_direction = WindDir_D1_WVT,
+         air_temp_C = AirTemp,
+         air_vp,
+         air_RH = RelHumidity,
+         air_DP = AirDewPoint,
+         air_pressure = AirPressure,
+         rain_mm_min = Ramount_Tot,
+         surf_temp_C = surf_temp_C,
+         surf_temp_sensor_delta_C = surf_temp_sensor_delta_C,
+         was_sunny = sunny) -> minute_2024_8_9x.tb
+
+
+
+# Third batch with logger program TowerViikki-024-08-fast
+# Changes only to millisecond table, but cause a memory card reset
+# affecting all tables
+
+load("data-rda-partial/minute_2024_8_21.tb.rda")
+tail(minute_2024_8_21.tb)
+nrow(minute_2024_8_21.tb)
+colnames(minute_2024_8_21.tb)
+minute_2024_8_21.tb |>
+  mutate(series_start = time[1],
+         air_vp = water_RH2vp(RelHumidity, AirTemp),
+         PAR_umol_LI = NA_real_, # PAR_Den_Avg * 1.26 / 1.06, #  / 0.948
+         PAR_umol_CS = PAR_Den_CS / 0.946, # -0 - 50
+         PAR_umol = PAR_umol_CS,
+         PAR_umol_BF = PAR_BF_tot * 1.09 - 0.27,
+         blue_umol = Blue_Den * 0.881 / 0.902 - 0.944,
+         blue_sellaro_umol = Blue_Den * 0.637 / 0.902 - 0.561,
+         UVA_umol = UVA_Den * 0.2356 / 0.936 - 0.251,
+         UVB_umol = UVB_Den * 0.0046644 / 0.854 - 0.00437,
+         UVA1_umol = 0.73747 * UVA_umol + 0.03433 * blue_sellaro_umol,
+         UVA2_umol = 0.157966 * UVA_umol + 1.364312 * UVB_umol,
+         red_umol = red_umol * 5.18 / 1.050,
+         far_red_umol = far_red_umol * 5.12 / 1.02, # / 1.048
+         SurfTemp_veg = ifelse(SurfTemp_veg < -27 | SurfTemp_veg > 100,
+                               NA_real_,
+                               SurfTemp_veg),
+         SurfTemp_grnd = ifelse(SurfTemp_grnd < -27 | SurfTemp_grnd > 100,
+                                NA_real_,
+                                SurfTemp_grnd),
+         surf_temp_sensor_delta_C = SurfTemp_veg - SurfTemp_grnd,
+         surf_temp_C = (SurfTemp_veg + SurfTemp_grnd) / 2,
+         surf_temp_C = ifelse(!is.na(surf_temp_C), surf_temp_C,
+                              ifelse(is.na(SurfTemp_veg), SurfTemp_grnd, SurfTemp_veg))) |>
+  select(series_start,
+         time,
+         day_of_year,
+         month_of_year,
+         month_name,
+         calendar_year = year,
+         time_of_day_utc,
+         solar_time_h,
+         sun_elevation,
+         sun_azimuth,
+         PAR_umol_LI,
+         PAR_umol_CS,
+         PAR_umol_BF,
+         PAR_umol,
+         PAR_diff_fr,
+         global_watt = Solar_irrad,
+         red_umol,
+         far_red_umol,
+         blue_umol,
+         blue_sellaro_umol,
+         UVA_umol,
+         UVA1_umol,
+         UVA2_umol,
+         UVB_umol,
+         wind_speed = WindSpd_S_WVT,
+         wind_direction = WindDir_D1_WVT,
+         air_temp_C = AirTemp,
+         air_vp,
+         air_RH = RelHumidity,
+         air_DP = AirDewPoint,
+         air_pressure = AirPressure,
+         rain_mm_min = Ramount_Tot,
+         surf_temp_C = surf_temp_C,
+         surf_temp_sensor_delta_C = surf_temp_sensor_delta_C,
+         was_sunny = sunny) -> minute_2024_8_21x.tb
 
 
 # merge data files from different dates -----------------------------------
 
-# merging of multiple data files should take place here in the future
+bind_rows(minute_2024_5_14x.tb, minute_2024_8_9x.tb, minute_2024_8_21x.tb) -> minute_2024_latest.tb
 
-minute_2024_latest.tb <- minute_2024_5x.tb
+range(minute_2024_latest.tb$time)
+
+rm(minute_2024_5_14x.tb, minute_2024_8_9x.tb, minute_2024_8_21x.tb)
+gc()
 
 # save date range for later validation
 original_time_range <- range(minute_2024_latest.tb$time)
@@ -208,19 +355,18 @@ minute_2024_latest.tb |>
   mutate(# correct for temperature coefficient assuming sensors are at air temperature
     UVA_umol = UVA_umol * (1 + 0.0033 * (air_temp_C - 20)),
     UVB_umol = UVB_umol * (1 + 0.0015 * (air_temp_C - 20)),
-    blue_red = blue_umol / red_umol,
+    blue_red = ifelse(PAR_umol > 0.1, blue_umol / red_umol, NA_real_),
     blue_red_sq = blue_red * wl_expanse(Red("Smith10")) / wl_expanse(Blue("Sellaro")),
-    UVA_PAR = UVA_umol / PAR_umol,
+    UVA_PAR = ifelse(PAR_umol > 0.1, UVA_umol / PAR_umol, NA_real_),
     UVA_PAR_sq = UVA_PAR * wl_expanse(PAR()) / wl_expanse(UVA()),
-    UVA1_PAR = UVA1_umol / PAR_umol,
+    UVA1_PAR = ifelse(PAR_umol > 0.1, UVA1_umol / PAR_umol, NA_real_),
     UVA1_PAR_sq = UVA1_PAR * wl_expanse(PAR()) / wl_expanse(UVA1()),
-    UVA2_PAR = UVA2_umol / PAR_umol,
+    UVA2_PAR = ifelse(PAR_umol > 0.1, UVA2_umol / PAR_umol, NA_real_),
     UVA2_PAR_sq = UVA2_PAR * wl_expanse(PAR()) / wl_expanse(UVA2()),
-    UVB_PAR = UVB_umol / PAR_umol,
+    UVB_PAR = ifelse(PAR_umol > 0.1, UVB_umol / PAR_umol, NA_real_),
     UVB_PAR_sq = UVB_PAR * wl_expanse(PAR()) / wl_expanse(UVB()),
-    red_far_red = red_umol / far_red_umol,
+    red_far_red = ifelse(PAR_umol > 0.1, red_umol / far_red_umol, NA_real_),
     .after = "UVB_umol") -> minute_2024_latest.tb
-
 
 # data validation checks --------------------------------------------------
 
@@ -250,22 +396,37 @@ minute_2024_latest.tb |>
   group_by(calendar_year, month_of_year, day_of_year) |>
   filter(PAR_umol == max(PAR_umol)) |>
   select(time, calendar_year, month_of_year, day_of_year,
-         PAR_umol, solar_time, time_of_day, sun_elevation) -> solar.time.max.PAR
+         PAR_umol, solar_time_h, time_of_day_utc, sun_elevation) -> solar.time.max.PAR
 
 solar.time.max.PAR |>
   group_by(calendar_year, month_of_year) |>
-  summarise(solar.time.max.PAR = mean(solar_time) ,
-            UTC.time.max.PAR = mean(time_of_day),
+  summarise(solar.time.max.PAR = mean(solar_time_h) ,
+            UTC.time.max.PAR = mean(time_of_day_utc),
             elevation.max.PAR = mean(sun_elevation)) |>
   ungroup() |>
   arrange(month_of_year, calendar_year) -> zz
 
 zz
 
-
 # save to file 1 minute data set ------------------------------------------
 
 save(minute_2024_latest.tb, file = "data-rda/minute_2024_latest.tb.rda")
+
+## Check range of values
+mean_min_max <- list(
+  mean = ~mean(.x, na.rm = TRUE),
+  #  mean.trimmed = ~mean(.x, trim = 1/3, na.rm = TRUE),
+  #  median = ~median(.x, na.rm = TRUE),
+  min = ~min(.x, na.rm = TRUE),
+  max = ~max(.x, na.rm = TRUE)
+)
+
+colnames(minute_2024_latest.tb)
+minute_2024_latest.tb |>
+  summarize(
+    across(PAR_umol_CS:UVB_umol, mean_min_max)
+  ) |> t()
+
 
 # compute hourly summaries ------------------------------------------------
 # data from sensors logged at 1 min, are not logged at 1 h
@@ -292,23 +453,21 @@ minute_2024_latest.tb |>
     summarize(across(time, first, .names = "{.col}_start"),
               across(time, last, .names = "{.col}_end"),
               across(day_of_year:calendar_year, first, .names = "{.col}"),
-              across(time_of_day:sun_azimuth, median, .names = "{.col}"),
+              across(time_of_day_utc:sun_azimuth, median, .names = "{.col}"),
               across(PAR_umol_LI:air_pressure, mean_min_max),
               across(surf_temp_C:surf_temp_sensor_delta_C, mean_min_max),
-              across(PAR_diff_fr_rel:air_vpd, mean, .names = "{.col}_mean"),
-              across(PAR_diff_fr_rel:air_vpd, max, .names = "{.col}_max"),
-              across(PAR_diff_fr_rel:air_vpd, min, .names = "{.col}_min"),
+              across(PAR_diff_fr_rel:air_vpd, mean_min_max),
               rain_mm_h = mean(rain_mm_min), # something wrong with units!!
               was_sunny = (sum(was_sunny) / n()) >= 0.5,
               was_day = (sum(was_day) / n()) >= 0.5,
               n = n(),
-              incomplete.data = n < 120,
-              bad.data = n < 100) |>
+              incomplete.data = n < 60,
+              bad.data = n < 50) |>
   ungroup() |>
-  filter(n > 31) |> # delete summaries for hours with less than 31 min of data
 #  select(-time) |>
   rename(time = time_hours) -> hour_calc_2024_latest.tb
 
+nrow(hour_calc_2024_latest.tb)
 sum(hour_calc_2024_latest.tb$incomplete.data)
 sum(hour_calc_2024_latest.tb$bad.data)
 
@@ -322,4 +481,19 @@ dim(hour_calc_2024_latest.tb)
 colnames(hour_calc_2024_latest.tb)
 
 save(hour_calc_2024_latest.tb, file = "data-rda/hour_calc_2024_latest.tb.rda")
+
+## Check range of values
+mean_min_max <- list(
+  mean = ~mean(.x, na.rm = TRUE),
+  #  mean.trimmed = ~mean(.x, trim = 1/3, na.rm = TRUE),
+  #  median = ~median(.x, na.rm = TRUE),
+  min = ~min(.x, na.rm = TRUE),
+  max = ~max(.x, na.rm = TRUE)
+)
+
+colnames(hour_calc_2024_latest.tb)
+hour_calc_2024_latest.tb |>
+  summarize(
+    across(PAR_umol_CS_mean:UVB_umol_max, mean_min_max)
+  ) |> t()
 

@@ -7,35 +7,37 @@ library(photobiologyWavebands)
 rm(list = ls(pattern = "*"))
 gc()
 
-load("data-rda/second_2024_5_14.tb.rda")
+# First batch with logger program TowerViikki-024-05-fast
+
+load("data-rda-partial/second_2024_5_14.tb.rda")
 colnames(second_2024_5_14.tb)
 nrow(second_2024_5_14.tb)
-second_2024_5_14.tb %>%
-  mutate(series_start = TIMESTAMP[1],
+second_2024_5_14.tb |>
+  mutate(series_start = time[1],
          PAR_umol = NA_real_,
          PAR_umol_LI = NA_real_,
-         PAR_umol_CS = PAR_Den_CS / 0.946, # -0 - 50
-         PAR_umol_BF = PAR_BF_tot * 1.124 + 3, # 2024 adjusted based on PAR_umol_CS
+         PAR_umol_CS = PAR_Den_CS / 0.946 + 0.1, # -0 - 50
+         PAR_umol_BF = PAR_BF_tot * 1.124 + 0.4, # 2024 adjusted based on PAR_umol_CS
          blue_umol = Blue_Den * 0.881 / 0.902 - 0.944,
          blue_sellaro_umol = Blue_Den * 0.637 / 0.902 - 0.561,
          UVA_umol = UVA_Den * 0.2356 / 0.936 - 0.251,
          UVB_umol = UVB_Den * 0.0046644 / 0.854 - 0.00437,
+         ## replace 20 with calibration temperature!!
+         # UVA_umol = UVA_umol * (1 + 0.0033 * (air_temp_C - 20)),
+         # UVB_umol = UVB_umol * (1 + 0.0015 * (air_temp_C - 20)),
          UVA1_umol = 0.73747 * UVA_umol + 0.03433 * blue_sellaro_umol,
          UVA2_umol = 0.157966 * UVA_umol + 1.364312 * UVB_umol,
          red_umol = red_umol * 5.18 / 1.050,
-         far_red_umol = far_red_umol * 5.12 / 1.02, # / 1.048,
-         solar_disk = factor(sunny,
-                             levels = c(FALSE, TRUE),
-                             labels = c("occluded", "visible"))
-  ) %>%
+         far_red_umol = far_red_umol * 5.12 / 1.02, # / 1.048)
+  ) |>
   select(series_start,
-         time = TIMESTAMP,
+         time,
          day_of_year,
          month_of_year,
          month_name,
-         calendar_year = year,
-         time_of_day = time_of_day_utc,
-         solar_time = solar_time_h,
+         year,
+         time_of_day_utc,
+         solar_time_h,
          sun_elevation,
          sun_azimuth,
          PAR_umol_CS,
@@ -51,17 +53,107 @@ second_2024_5_14.tb %>%
          UVA2_umol,
          UVB_umol,
          global_irrad = Solar_irrad,
-         solar_disk) -> second_2024_5x.tb
+         solar_disk) -> second_2024_5_14x.tb
 
-# bind_rows(minute_2015_8x.tb, minute_2016_8x.tb, minute_2017_6x.tb,
-#           minute_2019_4x.tb, minute_2020_5x.tb, minute_2020_11x.tb,
-#           minute_2021_6x.tb) -> minute_2015_latest.tb
+# Second batch with logger program TowerViikki-024-08-fast
+# Changes only to millisecond table, but cause a memory card reset
+# affecting all tables
 
-bind_rows(second_2024_5x.tb) %>%
-          arrange(time) -> second_2024_latest.tb
-second_2024_latest.tb[nrow(second_2024_latest.tb), "time"]
+load("data-rda-partial/second_2024_8_9.tb.rda")
+colnames(second_2024_8_9.tb)
+nrow(second_2024_8_9.tb)
+second_2024_8_9.tb |>
+  mutate(series_start = time[1],
+         PAR_umol = NA_real_,
+         PAR_umol_LI = NA_real_,
+         PAR_umol_CS = PAR_Den_CS / 0.946 + 0.1, # -0 - 50
+         PAR_umol_BF = PAR_BF_tot * 1.124 + 0.4, # 2024 adjusted based on PAR_umol_CS
+         blue_umol = Blue_Den * 0.881 / 0.902 - 0.944,
+         blue_sellaro_umol = Blue_Den * 0.637 / 0.902 - 0.561,
+         UVA_umol = UVA_Den * 0.2356 / 0.936 - 0.251,
+         UVB_umol = UVB_Den * 0.0046644 / 0.854 - 0.00437,
+         UVA1_umol = 0.73747 * UVA_umol + 0.03433 * blue_sellaro_umol,
+         UVA2_umol = 0.157966 * UVA_umol + 1.364312 * UVB_umol,
+         red_umol = red_umol * 5.18 / 1.050,
+         far_red_umol = far_red_umol * 5.12 / 1.02, # / 1.048)
+  ) |>
+  select(series_start,
+         time,
+         day_of_year,
+         month_of_year,
+         month_name,
+         year,
+         time_of_day_utc,
+         solar_time_h,
+         sun_elevation,
+         sun_azimuth,
+         PAR_umol_CS,
+         PAR_umol_BF,
+         PAR_umol,
+         PAR_diff_fr,
+         red_umol,
+         far_red_umol,
+         blue_umol,
+         blue_sellaro_umol,
+         UVA_umol,
+         UVA1_umol,
+         UVA2_umol,
+         UVB_umol,
+         global_irrad = Solar_irrad,
+         solar_disk) -> second_2024_8_9x.tb
 
-rm(second_2024_5x.tb)
+# Third batch with logger program TowerViikki-024-08-fast
+# Changes only to millisecond table, but cause a memory card reset
+# affecting all tables
+
+load("data-rda-partial/second_2024_8_21.tb.rda")
+colnames(second_2024_8_21.tb)
+nrow(second_2024_8_21.tb)
+second_2024_8_21.tb |>
+  mutate(series_start = time[1],
+         PAR_umol = NA_real_,
+         PAR_umol_LI = NA_real_,
+         PAR_umol_CS = PAR_Den_CS / 0.946 + 0.1, # -0 - 50
+         PAR_umol_BF = PAR_BF_tot * 1.124 + 0.4, # 2024 adjusted based on PAR_umol_CS
+         blue_umol = Blue_Den * 0.881 / 0.902 - 0.944,
+         blue_sellaro_umol = Blue_Den * 0.637 / 0.902 - 0.561,
+         UVA_umol = UVA_Den * 0.2356 / 0.936 - 0.251,
+         UVB_umol = UVB_Den * 0.0046644 / 0.854 - 0.00437,
+         UVA1_umol = 0.73747 * UVA_umol + 0.03433 * blue_sellaro_umol,
+         UVA2_umol = 0.157966 * UVA_umol + 1.364312 * UVB_umol,
+         red_umol = red_umol * 5.18 / 1.050,
+         far_red_umol = far_red_umol * 5.12 / 1.02, # / 1.048)
+  ) |>
+  select(series_start,
+         time,
+         day_of_year,
+         month_of_year,
+         month_name,
+         year,
+         time_of_day_utc,
+         solar_time_h,
+         sun_elevation,
+         sun_azimuth,
+         PAR_umol_CS,
+         PAR_umol_BF,
+         PAR_umol,
+         PAR_diff_fr,
+         red_umol,
+         far_red_umol,
+         blue_umol,
+         blue_sellaro_umol,
+         UVA_umol,
+         UVA1_umol,
+         UVA2_umol,
+         UVB_umol,
+         global_irrad = Solar_irrad,
+         solar_disk) -> second_2024_8_21x.tb
+
+bind_rows(second_2024_5_14x.tb, second_2024_8_9x.tb, second_2024_8_21x.tb) -> second_2024_latest.tb
+
+range(second_2024_latest.tb$time)
+
+rm(second_2024_5_14x.tb, second_2024_8_9x.tb, second_2024_8_21x.tb)
 gc()
 
 # We check for duplicate rows
@@ -128,7 +220,7 @@ if (duplicates > 0L) {
 # }
 #
 # #  Clean spikes in data
-# minute_2015_latest.tb %>%
+# minute_2015_latest.tb |>
 #   mutate(air_temp_C = clean_spikes(air_temp_C),
 #          surf_temp_C = clean_spikes(surf_temp_C),
 #          global_watt = clean_spikes(global_watt),
@@ -138,24 +230,21 @@ if (duplicates > 0L) {
 # Add computed values for radiation and PET
 albedo <- 0.23
 
-second_2024_latest.tb %>%
-  mutate(PAR_umol = PAR_umol_CS) %>%
+second_2024_latest.tb |>
+  mutate(PAR_umol = PAR_umol_CS) |>
   mutate(# correct for temperature coefficient assuming sensors are at air temperature
-         UVA_umol = UVA_umol, # * (1 + 0.0033 * (air_temp_C - 20)),
-         UVB_umol = UVB_umol, # * (1 + 0.0015 * (air_temp_C - 20)),
-         blue_red = blue_umol / red_umol,
+         blue_red = ifelse(PAR_umol > 0.1, blue_umol / red_umol, NA_real_),
          blue_red_sq = blue_red * wl_expanse(Red("Smith10")) / wl_expanse(Blue("Sellaro")),
-         UVA_PAR = UVA_umol / PAR_umol,
+         UVA_PAR = ifelse(PAR_umol > 0.1, UVA_umol / PAR_umol, NA_real_),
          UVA_PAR_sq = UVA_PAR * wl_expanse(PAR()) / wl_expanse(UVA()),
-         UVA1_PAR = UVA1_umol / PAR_umol,
+         UVA1_PAR = ifelse(PAR_umol > 0.1, UVA1_umol / PAR_umol, NA_real_),
          UVA1_PAR_sq = UVA1_PAR * wl_expanse(PAR()) / wl_expanse(UVA1()),
-         UVA2_PAR = UVA2_umol / PAR_umol,
+         UVA2_PAR = ifelse(PAR_umol > 0.1, UVA2_umol / PAR_umol, NA_real_),
          UVA2_PAR_sq = UVA2_PAR * wl_expanse(PAR()) / wl_expanse(UVA2()),
-         UVB_PAR = UVB_umol / PAR_umol,
+         UVB_PAR = ifelse(PAR_umol > 0.1, UVB_umol / PAR_umol, NA_real_),
          UVB_PAR_sq = UVB_PAR * wl_expanse(PAR()) / wl_expanse(UVB()),
-         red_far_red = red_umol / far_red_umol,
+         red_far_red = ifelse(PAR_umol > 0.1, red_umol / far_red_umol, NA_real_),
          .after = "UVB_umol") -> second_2024_latest.tb
-second_2024_latest.tb[nrow(second_2024_latest.tb), "time"]
 
 gc()
 
@@ -165,62 +254,52 @@ ncol(second_2024_latest.tb)
 colnames(second_2024_latest.tb)
 
 # checks
-# second_2024_latest.tb %>%
-#   group_by(calendar_year, month_of_year, day_of_year) %>%
-#   filter(PAR_umol == max(PAR_umol)) %>%
+# second_2024_latest.tb |>
+#   group_by(calendar_year, month_of_year, day_of_year) |>
+#   filter(PAR_umol == max(PAR_umol)) |>
 #   select(time, calendar_year, month_of_year, day_of_year,
 #          PAR_umol, solar_time, time_of_day, sun_elevation) -> solar.time.max.PAR
 #
-# solar.time.max.PAR %>%
-#   group_by(calendar_year, month_of_year) %>%
+# solar.time.max.PAR |>
+#   group_by(calendar_year, month_of_year) |>
 #   summarise(solar.time.max.PAR = mean(solar_time) ,
 #             local.time.max.PAR = mean(time_of_day),
-#             elevation.max.PAR = mean(sun_elevation)) %>%
-#   ungroup() %>%
+#             elevation.max.PAR = mean(sun_elevation)) |>
+#   ungroup() |>
 #   arrange(month_of_year, calendar_year) -> zz
 
 # View(zz)
 
-range(second_2024_latest.tb$time)
+head(second_2024_latest.tb)
 tail(second_2024_latest.tb)
+
+max(diff(second_2024_latest.tb$time))
+min(diff(second_2024_latest.tb$time))
 
 save(second_2024_latest.tb, file = "data-rda/second_2024_latest.tb.rda")
 
-# compute hourly summaries
+# Make it possible to run the script skipping all code above
+if (!exists("second_2024_latest.tb")) {
+  library(dplyr)
+  library(lubridate)
+  library(photobiology)
+  library(photobiologyWavebands)
+  load(file = "data-rda/second_2024_latest.tb.rda")
+}
 
+## Check range of values
 mean_min_max <- list(
-  mean = ~mean(.x, na.rm = FALSE),
-#  mean.trimmed = ~mean(.x, trim = 1/3, na.rm = FALSE),
-#  median = ~median(.x, na.rm = FALSE),
-  min = ~min(.x, na.rm = FALSE),
-  max = ~max(.x, na.rm = FALSE)
+  mean = ~mean(.x, na.rm = TRUE),
+  #  mean.trimmed = ~mean(.x, trim = 1/3, na.rm = TRUE),
+  #  median = ~median(.x, na.rm = TRUE),
+  min = ~min(.x, na.rm = TRUE),
+  max = ~max(.x, na.rm = TRUE)
 )
 
+head(second_2024_latest.tb)
+
 colnames(second_2024_latest.tb)
-
-# time is the hour at the
 second_2024_latest.tb |>
-  mutate(time_minutes = trunc(time, units = "mins") + minutes(1)) |> # match FMI timing
-  select(-series_start) |>
-  group_by(time_minutes) |>
-  summarize(across(time, first, .names = "{.col}_start"),
-            across(time, last, .names = "{.col}_end"),
-            across(day_of_year:calendar_year, first, .names = "{.col}"),
-            across(time_of_day:sun_azimuth, median, .names = "{.col}"),
-            across(PAR_umol_CS:global_irrad, mean, .names = "{.col}"),
-            sun_visible_fr = sum(solar_disk == "visible") / n(),
-            solar_disk = ifelse(sun_visible_fr < 0.5, "occluded", "visible"),
-              n = n()) |>
-  mutate(solar_disk = factor(solar_disk)) |>
-  ungroup() |>
-  filter(n > 100) |> # delete summaries for minutes with less than 50 seconds of data
-  #  select(-time) |>
-  rename(time = time_minutes) -> minute_calc_2024_latest.tb
-
-dim(minute_calc_2024_latest.tb)
-colnames(minute_calc_2024_latest.tb)
-
-save(minute_calc_2024_latest.tb, file = "data-rda/minute_calc_2024_latest.tb.rda")
-
-
-
+  summarize(
+    across(PAR_umol_CS:UVB_umol, mean_min_max)
+  ) |> t()

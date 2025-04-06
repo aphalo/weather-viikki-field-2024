@@ -299,7 +299,7 @@ This is computed from the profile data down to 55 cm depth. Positive values indi
 ```{r}
 day_2024_latest.tb |>
   select(time, water_mm_0to55cm_delta, rain_mm_day, ET_ref_FAO56_mean, n_minutes) |>
-  filter(n_minutes > 1400) |>
+  filter(n_minutes > 1400 & time < ymd_h("2024-10-05 24")) |>
   na.omit() |>
   ggplot(aes(time)) +
   geom_hline(yintercept = 0, colour = "gray50", linewidth = 0.3) +
@@ -309,6 +309,7 @@ day_2024_latest.tb |>
   geom_point(aes(y = water_mm_0to55cm_delta), colour = "black") +
   geom_point(aes(y = rain_mm_day), colour = "blue") +
   geom_point(aes(y = -ET_ref_FAO56_mean * 24), colour = "orange") +
+#  scale_y_continuous(limits = c(-10, 70)) +
   labs(y = expression("Water flux "*(mm~d^{-1})), x = "Time",
        caption = "Blue = rain, Black = change in soil water content, Orange = reference ET.") -> 
 soil_water_delta.fig
@@ -333,8 +334,28 @@ day_2024_latest.tb |>
 soil_t_50cm.fig
 soil_t_50cm.fig
 ```
+## Soil water content at 20 cm depths
+
+Watered!
+
+```{r}
+day_2024_latest.tb |>
+  select(time, VWC_1_mean, VWC_2_mean, VWC_3_mean) |>
+  na.omit() |>
+  ggplot() +
+  geom_line(aes(y = VWC_1_mean, x = time), color = "red") +
+  geom_line(aes(y = VWC_2_mean, x = time)) +
+  geom_line(aes(y = VWC_3_mean, x = time), color = "darkgreen") +
+  labs(y = expression("Soil water v/v "*(m^{3}~m^{-3})), x = "Time") +
+  expand_limits(y = 0) -> 
+soil_VWC_20cm.fig
+soil_VWC_20cm.fig
+
+```
 
 ## Soil water content at different depths
+
+Not watered!
 
 ```{r}
 day_2024_latest.tb |>

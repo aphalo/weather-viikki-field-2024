@@ -76,7 +76,7 @@ hour_2024_latest.tb |>
             surf_temp_sensor_delta_C_max = max(surf_temp_sensor_delta_C_max, na.rm = TRUE),
 
             sunny_hours = sum(was_sunny, na.rm = TRUE),
-            rain_mm_day = sum(rain_mm_h, na.rm = TRUE),
+            rain_mm_day = sum(rain_mm, na.rm = TRUE),
             n_minutes = sum(n),
 
             across(logged_air_temp_C_mean:air_vpd_mean, mean),

@@ -33,13 +33,13 @@ hour_2024_latest.tb |>
          day_of_year,
          month_of_year,
          air_temp_C_mean,
-         rain_mm_h) -> temp.df
+         rain_mm) -> temp.df
 
 temp.df |>
   group_by(day_of_year, month_of_year) |>
   summarise(time = trunc(time[1], "day"),
             air_temp_C_mean = mean(air_temp_C_mean),
-            rain_mm_day = sum(rain_mm_h),
+            rain_mm_day = sum(rain_mm),
             n = n()) |>
   ungroup() |>
   subset(n == 24) -> Viikki_1d_2024.tb
@@ -87,8 +87,12 @@ rain.fig +
   stat_poly_eq(formula = y ~ x + 0)
 
 rain.fig +
+  stat_poly_line(formula = y ~ x) +
+  stat_poly_line(formula = x ~ y, color = "red")
+
+rain.fig +
   stat_ma_line() +
-  stat_ma_eq()
+  stat_ma_eq(mapping = use_label(c("eq", "R2")))
 
 ggplot(subset(Viikki_Kumpula_1d_2024.tb,
               rain_mm_day.fmi > 2 & rain_mm_day > 2),
@@ -104,14 +108,3 @@ ggplot(subset(Viikki_Kumpula_1d_2024.tb,
   stat_quant_eq(quantiles = 0.5) +
   geom_abline(slope = 1, colour = "darkgreen")
 
-# the error is huge
-ggplot(subset(Viikki_Kumpula_10min_2024.tb,
-              rain_mm_h.fmi > 0.1 & rain_mm_h > 0.1), aes(rain_mm_h.fmi, rain_mm_h)) +
-  stat_hdr() +
-  stat_quant_line() +
-  stat_quant_eq() +
-  stat_correlation(label.x = "right", label.y = "bottom") +
-  facet_wrap(facets = vars(month(time))) +
-  scale_x_log10() +
-  scale_y_log10() +
-  expand_limits(x = c(5e-2, 100), y = c(5e-2, 100))

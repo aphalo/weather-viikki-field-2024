@@ -54,8 +54,8 @@ minute_2024_5_14.tb |>
          surf_temp_C = (SurfTemp_veg + SurfTemp_grnd) / 2,
          surf_temp_C = ifelse(!is.na(surf_temp_C), surf_temp_C,
                               ifelse(is.na(SurfTemp_veg), SurfTemp_grnd, SurfTemp_veg)),
-         # logger used instead of average Totalize once every 10 s but value is in mm min-1
-         Ramount_Tot = Ramount_Tot / 0.6) |>
+         # in logger used Totalize once per minute and WXT is set to accumulate rain each minute
+         Ramount_Tot = Ramount_Tot) |>
   select(series_start,
          time,
          day_of_year,
@@ -87,7 +87,7 @@ minute_2024_5_14.tb |>
          air_RH = RelHumidity,
          air_DP = AirDewPoint,
          air_pressure = AirPressure,
-         rain_mm_h = Ramount_Tot,
+         rain_mm = Ramount_Tot,
          surf_temp_C = surf_temp_C,
          surf_temp_sensor_delta_C = surf_temp_sensor_delta_C,
          was_sunny = sunny) -> minute_2024_5_14x.tb
@@ -126,7 +126,8 @@ minute_2024_8_9.tb |>
          surf_temp_C = (SurfTemp_veg + SurfTemp_grnd) / 2,
          surf_temp_C = ifelse(!is.na(surf_temp_C), surf_temp_C,
                               ifelse(is.na(SurfTemp_veg), SurfTemp_grnd, SurfTemp_veg)),
-         # logger used instead of average Totalize once every 10 s but value is in mm h-1
+         # logger used Totalize once every 10 s every with Table at 1 min
+         # Ramount_Tot / 6 gives rain amount in 60 s
          Ramount_Tot = Ramount_Tot / 6) |>
   select(series_start,
          time,
@@ -159,7 +160,7 @@ minute_2024_8_9.tb |>
          air_RH = RelHumidity,
          air_DP = AirDewPoint,
          air_pressure = AirPressure,
-         rain_mm_h = Ramount_Tot,
+         rain_mm = Ramount_Tot,
          surf_temp_C = surf_temp_C,
          surf_temp_sensor_delta_C = surf_temp_sensor_delta_C,
          was_sunny = sunny) -> minute_2024_8_9x.tb
@@ -199,7 +200,7 @@ minute_2024_8_21.tb |>
          surf_temp_C = (SurfTemp_veg + SurfTemp_grnd) / 2,
          surf_temp_C = ifelse(!is.na(surf_temp_C), surf_temp_C,
                               ifelse(is.na(SurfTemp_veg), SurfTemp_grnd, SurfTemp_veg)),
-         # logger used instead of average Totalize once every 10 s but value is in mm h-1
+         # logger used Totalize once every 10 s with Table at 60 s
          Ramount_Tot = Ramount_Tot / 6) |>
   select(series_start,
          time,
@@ -232,7 +233,7 @@ minute_2024_8_21.tb |>
          air_RH = RelHumidity,
          air_DP = AirDewPoint,
          air_pressure = AirPressure,
-         rain_mm_h = Ramount_Tot,
+         rain_mm = Ramount_Tot,
          surf_temp_C = surf_temp_C,
          surf_temp_sensor_delta_C = surf_temp_sensor_delta_C,
          was_sunny = sunny) -> minute_2024_8_21x.tb
@@ -469,7 +470,7 @@ minute_2024_latest.tb |>
               across(PAR_umol_LI:air_pressure, mean_min_max),
               across(surf_temp_C:surf_temp_sensor_delta_C, mean_min_max),
               across(PAR_diff_fr_rel:air_vpd, mean_min_max),
-              rain_mm_h = mean(rain_mm_h), # something wrong with units or huge variability!!
+              rain_mm = sum(rain_mm) / 30,
               was_sunny = (sum(was_sunny) / n()) >= 0.5,
               was_day = (sum(was_day) / n()) >= 0.5,
               n = n(),

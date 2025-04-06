@@ -37,7 +37,8 @@ locale_UTC <- locale(tz = "UTC")
 We read the hourinterval data for the whole summer.
 
 ```{r}
-hour_raw.tb <- read_csi_dat(file = "data-latest/Viikki Tower_TableHour.dat", locale = locale_UTC)
+# hour_raw.tb <- read_csi_dat(file = "data-latest/Viikki Tower_TableHour.dat", locale = locale_UTC)
+hour_raw.tb <- read_csi_dat(file = "data-logged/data-2025-01-14/Viikki Tower_TableHour.dat", locale = locale_UTC)
 
 nrow(hour_raw.tb)
 ncol(hour_raw.tb)
@@ -47,6 +48,17 @@ hour_raw.tb$TIMESTAMP[nrow(hour_raw.tb)]
 
 ```{r}
 colnames(hour_raw.tb)
+```
+
+```{r}
+tail(hour_raw.tb$TIMESTAMP)
+sum(hour_raw.tb$BattV_Min < 12)
+hour_raw.tb$TIMESTAMP[which(hour_raw.tb$BattV_Min < 12)]
+```
+
+```{r}
+tail(hour_raw.tb$TIMESTAMP)
+sum(hour_raw.tb$BattV_Max < 12)
 ```
 
 ```{r}
@@ -65,7 +77,7 @@ if (duplicates > 0L) {
 }
 ```
 
-This code is for 2021 -> when UTC + 2h was always set in logger
+This code is for >= 2021 -> when UTC + 2h was always set in logger
 
 ```{r}
 hour_raw.tb[["TIMESTAMP"]][1]
@@ -77,7 +89,6 @@ hour_raw.tb[["TIMESTAMP"]][nrow(hour_raw.tb)]
 tz(hour_raw.tb[["TIMESTAMP"]][1])
 ```
 
-
 ```{r}
 hour_raw.tb %>%
   mutate(year = year(TIMESTAMP),
@@ -88,6 +99,7 @@ hour_raw.tb %>%
          time_of_day = as_tod(TIMESTAMP)) -> hour.tb
 nrow(hour.tb)
 ```
+
 
 ```{r}
 obj.name <- paste("hour_", year(hour_raw.tb$TIMESTAMP[1]),

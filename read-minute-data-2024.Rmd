@@ -65,10 +65,11 @@ library(photobiologyInOut)
 library(dplyr)
 ```
 
-We read the minute interval data for whole periods. When dowloading data from the logger we append it to the file. A new file is started when the data tables change. This happens when the CRBASIC program in the logger is editted in a way that changes the data that are logged.
+We read the minute interval data for whole periods. When downloading data from the logger we append it to the file. A new file is started when the data tables change. This happens when the CRBASIC program in the logger is edited in a way that changes the data that are logged.
 
 ```{r}
 minute_raw.tb <- read_csi_dat(file = "data-latest/Viikki Tower_TableMinute.dat", locale = locale_UTC)
+# minute_raw.tb <- read_csi_dat(file = "data-logged/data-2025-01-14/Viikki Tower_TableMinute.dat", locale = locale_UTC)
 
 minute_raw.tb
 nrow(minute_raw.tb)

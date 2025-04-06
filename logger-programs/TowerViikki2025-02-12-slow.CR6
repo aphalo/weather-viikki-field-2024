@@ -4,7 +4,7 @@
 ' program author: Pedro J. Aphalo
 '
 'Revision history
-'2025
+'2015
 ' Neha's experiment 2015 Medicago truncatula
 '2020-05-06
 ' Revised: 
@@ -54,6 +54,18 @@
 ' This seems to indicate that means from vary many observations are not
 ' supported. Change reading frequency for sensors known to be slow, and
 ' removed from TableMinute the averages available at 1 s.
+'2024-10-17
+' Program set to run once per 0.5 s
+' Decrease speed for the winter to decrease data volume
+' Delete 50 ms table
+' Add averages for fast sensors to TableSecond
+' with time step increased 0.5s -> 10s
+' Table minute remains unchanged
+'
+'2025-02-12
+' Delete 107 thermistors reading as they have not been connected
+' sglux sensors have been in their place since 2024-08 or earlier
+'
 'Declare Public Variables
 'Self monitoring:
 Public PTemp_C
@@ -133,8 +145,8 @@ Units Hamount=hits/cm2
 Units SupplyVoltage=V
 Units ReferenceVoltage=V
 '107 Thermistors Temperature 
-Public T107_C(4)
-Units T107_C=Celsius
+'Public T107_C(4)
+'Units T107_C=Celsius
 'CS65 Soil water + temperature + conductivity
 'Declare Variables and Units
 Public CS65X_1(3)
@@ -340,24 +352,9 @@ Units SurfTemp_veg=Celsius
 'Example:
 'CONST PI = 3.141592654	
 
-'Define Data Tables.
-'
-'Fast sampling of irradiance during daytime 
-'Only sensors with short reponse time constants
-DataTable(TableMilliSecond,True,-1)
-  DataInterval(0,50,mSec,0)
-	CardOut(0,-1)
-  Sample (1,PAR_Den_CS,IEEE4)
-  Sample (1,UVBf_Den,IEEE4)
-  Sample (1,UVAf_Den,IEEE4)
-  Sample (1,UVA1f_Den,IEEE4)
-  Sample (1,Bluef_Den,IEEE4)
-  Sample (1,Greenf_Den,IEEE4)
-EndTable
-'
 'Fast averaging of irradiance
 DataTable(TableSecond,True,-1)
-  DataInterval(0,500,mSec,0)
+  DataInterval(0,10,sec,0)
 	CardOut(0,-1)
   Average (1,PAR_Den,IEEE4,False)
   Average (1,PAR_Den_CS,IEEE4,False)
@@ -368,6 +365,11 @@ DataTable(TableSecond,True,-1)
   Average (1,Blue_Den,IEEE4,False)
   Average (1,UVA_Den,IEEE4,False)
   Average (1,UVB_Den,IEEE4,False)
+  Average (1,Greenf_Den,IEEE4,False)
+  Average (1,Bluef_Den,IEEE4,False)
+  Average (1,UVAf_Den,IEEE4,False)
+  Average (1,UVA1f_Den,IEEE4,False)
+  Average (1,UVBf_Den,IEEE4,False)
   Average (1,Solar_irrad,IEEE4,False)
   Average (1,SurfTemp_grnd,IEEE4,False)
   Average (1,SurfTemp_veg,IEEE4,False)
@@ -480,7 +482,7 @@ DataTable(TableHour,True,-1)
 	Average(1,Ka_50cm_3,IEEE4,False)
 	Average(1,T_50cm_3,IEEE4,False)
 	Average(1,BulkEC_50cm_3,IEEE4,False)
-  Average (4,T107_C,IEEE4,False)
+'  Average(4,T107_C,IEEE4,False)
 ' Diagnostics
 ' Vaisala WXT
   Minimum(1,SupplyVoltage,IEEE4,False,False)
@@ -503,8 +505,8 @@ EndTable
 'Main Program
 BeginProg
   CPISpeed(500) 'fast CPI communication
-	  'Main Scan (we set 1200 buffers = 2 min to see if we can avoid NAN values)
-     Scan(50,mSec,2400,0)
+	  'Main Scan (we set buffers = 4 min to see if we can avoid NAN values)
+     Scan(1,sec,240,0)
     'LI190SB Quantum Sensor measurements PAR_Tot and PAR_Den, channel 1:
     'Calibration is for LI-190 s/n xxxx  
 		CDM_VoltDiff(CDM_A116,1,PAR_Den,1,Autorange,1,True,0,7500,235.51,0)
@@ -548,9 +550,6 @@ BeginProg
 		  DewPoint(AirDewPoint,AirTemp,RelHumidity)
 		EndIf
  		'Call Output Tables
-  	If PAR_Den_CS > 1 AND TimeIsBetween(5,10,15,min) Then
- 		  CallTable(TableMilliSecond)
- 		EndIf
 	  CallTable(TableSecond)
     CallTable(TableMinute)
     CallTable(TableHour)
@@ -562,7 +561,7 @@ SlowSequence
     Scan(12,Min,0,0)
    		' 107 Temperature Probe (CSL) measurement 'T107_C' on CDM-A116 with CPI address 1
   		' 4 sensors single ended channels 20-23 (10-11 differential)
-  		CDM_Therm107(CDM_A116,1,T107_C,4,20,3,0,7500,1,0)
+'  		CDM_Therm107(CDM_A116,1,T107_C,4,20,3,0,500,1,0)
 			'SoilVUE10 Complete Soil Profiler measurements 'VWC_5cm', 'Ka_5cm', 'T_5cm', and 'BulkEC_5cm'
 			SDI12Recorder(SoilVUE_5cm_1(),C3,0,"M1!",1,0,-1)
 			'SoilVUE10 Complete Soil Profiler measurements 'VWC_10cm', 'Ka_10cm', 'T_10cm', and 'BulkEC_10cm'

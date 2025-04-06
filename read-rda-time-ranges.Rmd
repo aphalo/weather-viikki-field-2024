@@ -1,0 +1,45 @@
+---
+title: "Check read data"
+author: "Pedro J. Aphalo"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+files <- list.files("./data-rda/", full.names = TRUE)
+```
+
+```{r}
+time_ranges <- list()
+time_points <- numeric()
+for (f in files) {
+  load(f)
+  log.objects <- ls(pattern = "tb$")
+  for (object in log.objects) {
+    cat("spectrum:", object)
+    temp <- get(object)[["time"]]
+    time_ranges[[object]] <- range(temp)
+    time_points <- c(time_points, length(temp))
+    cat(" done\n")
+    rm(temp)
+  }
+  rm(list = log.objects)
+}
+
+time_ranges <- as.data.frame(time_ranges)
+time_ranges <- cbind(time_ranges, time_points)
+save(time_ranges, file = "./data-rda/time-ranges.rda")
+print(time_ranges)
+```
+
+```{r}
+files <- list.files("./data-rda-partial/", full.names = FALSE)
+print(sort(files))
+```
+```
+
+

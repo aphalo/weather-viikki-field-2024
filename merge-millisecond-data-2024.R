@@ -93,20 +93,66 @@ millisecond_2024_8_9.tb |>
          UVA1fc_umol,
          UVA2fc_umol) -> millisecond_2024_8_9x.tb
 
+# third batch with logger program TowerViikki-024-08-fast
+# This added five sglux fast sensors, and their data to this table
+# frequency remained unchanged.
+
+load("data-rda-partial/millisecond_2024_8_21.tb.rda")
+colnames(millisecond_2024_8_21.tb)
+nrow(millisecond_2024_8_21.tb)
+millisecond_2024_8_21.tb |>
+#  rename(time = TIMESTAMP) |>
+  mutate(series_start = time[1],
+         PAR_umol_CS = PAR_Den_CS / 0.946 - 1.057, # -0 - 50
+         greenf_umol = Greenf_Den - 7.159275e-02,
+         greenf_sellaro_umol = Greenf_Den - 7.159275e-02,
+         bluef_umol = Bluef_Den / 1.4010 - 8.346781e-01,
+         bluef_sellaro_umol = Bluef_Den / 1.9365 - 6.038647e-01,
+         UVA1f_umol = UVA1f_Den / 6.4374 - 8.985690e-03,
+         UVAf_umol = UVAf_Den / 4.3838 - 1.740200e-01,
+         UVA2f_umol = UVAf_Den / 24.312 - 3.137829e-02,
+         UVBf_umol = UVBf_Den / 273.14 - 1.870687e-04,
+         UVA1fc_umol = 0.73747 * UVAf_umol + 0.03433 * bluef_sellaro_umol,
+         UVA2fc_umol = 0.157966 * UVAf_umol + 1.364312 * UVBf_umol
+  ) |>
+  select(series_start,
+         time,
+         day_of_year,
+         month_of_year,
+         month_name,
+         calendar_year = year,
+         time_of_day_utc,
+         solar_time_h,
+         sun_elevation,
+         sun_azimuth,
+         PAR_umol_CS,
+         greenf_umol,
+         greenf_sellaro_umol,
+         bluef_umol,
+         bluef_sellaro_umol,
+         UVA1f_umol,
+         UVAf_umol,
+         UVA2f_umol,
+         UVBf_umol,
+         UVA1fc_umol,
+         UVA2fc_umol) -> millisecond_2024_8_21x.tb
+
 # bind data, here the columns differ so binding adds NAs
 
 # bind_rows(minute_2015_8x.tb, minute_2016_8x.tb, minute_2017_6x.tb,
 #           minute_2019_4x.tb, minute_2020_5x.tb, minute_2020_11x.tb,
 #           minute_2021_6x.tb) -> minute_2015_latest.tb
 
-bind_rows(millisecond_2024_5_14x.tb, millisecond_2024_8_9x.tb) -> millisecond_2024_latest.tb
+bind_rows(millisecond_2024_5_14x.tb,
+          millisecond_2024_8_9x.tb,
+          millisecond_2024_8_21x.tb) -> millisecond_2024_latest.tb
 range(millisecond_2024_latest.tb$time)
 
 # no data logged at night!
 max(diff(millisecond_2024_latest.tb$time))
 round(min(diff(millisecond_2024_latest.tb$time)), 5)
 
-rm(millisecond_2024_5_14x.tb, millisecond_2024_8_9x.tb)
+rm(millisecond_2024_5_14x.tb, millisecond_2024_8_9x.tb, millisecond_2024_8_21x.tb)
 gc()
 
 # We check for duplicate rows
@@ -223,7 +269,7 @@ colnames(millisecond_2024_latest.tb)
 tail(millisecond_2024_latest.tb)
 save(millisecond_2024_latest.tb, file = "data-rda/millisecond_2024_latest.tb.rda")
 
-load(file = "data-rda/millisecond_2024_latest.tb.rda")
+# load(file = "data-rda/millisecond_2024_latest.tb.rda")
 # compute hourly summaries
 
 mean_min_max <- list(

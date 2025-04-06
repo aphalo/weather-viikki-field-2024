@@ -1,6 +1,7 @@
 library(dplyr)
 library(lubridate)
 library(photobiology)
+library(photobiologyPlants)
 library(photobiologyWavebands)
 
 ## 2024-04-20
@@ -22,7 +23,7 @@ gc()
 viikki_wstation.geo <- data.frame(lon = 25.019212, lat = 60.226805,
                                   address = "Viikki weather station")
 
-# First batch with logger program TowerViikki-024-05-fast
+# First batch with logger program TowerViikki-2024-05-fast
 
 load("data-rda-partial/minute_2024_5_14.tb.rda")
 tail(minute_2024_5_14.tb)
@@ -52,7 +53,9 @@ minute_2024_5_14.tb |>
          surf_temp_sensor_delta_C = SurfTemp_veg - SurfTemp_grnd,
          surf_temp_C = (SurfTemp_veg + SurfTemp_grnd) / 2,
          surf_temp_C = ifelse(!is.na(surf_temp_C), surf_temp_C,
-                              ifelse(is.na(SurfTemp_veg), SurfTemp_grnd, SurfTemp_veg))) |>
+                              ifelse(is.na(SurfTemp_veg), SurfTemp_grnd, SurfTemp_veg)),
+         # logger used instead of average Totalize once every 10 s but value is in mm min-1
+         Ramount_Tot = Ramount_Tot / 0.6) |>
   select(series_start,
          time,
          day_of_year,
@@ -84,7 +87,7 @@ minute_2024_5_14.tb |>
          air_RH = RelHumidity,
          air_DP = AirDewPoint,
          air_pressure = AirPressure,
-         rain_mm_min = Ramount_Tot,
+         rain_mm_h = Ramount_Tot,
          surf_temp_C = surf_temp_C,
          surf_temp_sensor_delta_C = surf_temp_sensor_delta_C,
          was_sunny = sunny) -> minute_2024_5_14x.tb
@@ -122,7 +125,9 @@ minute_2024_8_9.tb |>
          surf_temp_sensor_delta_C = SurfTemp_veg - SurfTemp_grnd,
          surf_temp_C = (SurfTemp_veg + SurfTemp_grnd) / 2,
          surf_temp_C = ifelse(!is.na(surf_temp_C), surf_temp_C,
-                              ifelse(is.na(SurfTemp_veg), SurfTemp_grnd, SurfTemp_veg))) |>
+                              ifelse(is.na(SurfTemp_veg), SurfTemp_grnd, SurfTemp_veg)),
+         # logger used instead of average Totalize once every 10 s but value is in mm h-1
+         Ramount_Tot = Ramount_Tot / 6) |>
   select(series_start,
          time,
          day_of_year,
@@ -154,7 +159,7 @@ minute_2024_8_9.tb |>
          air_RH = RelHumidity,
          air_DP = AirDewPoint,
          air_pressure = AirPressure,
-         rain_mm_min = Ramount_Tot,
+         rain_mm_h = Ramount_Tot,
          surf_temp_C = surf_temp_C,
          surf_temp_sensor_delta_C = surf_temp_sensor_delta_C,
          was_sunny = sunny) -> minute_2024_8_9x.tb
@@ -193,7 +198,9 @@ minute_2024_8_21.tb |>
          surf_temp_sensor_delta_C = SurfTemp_veg - SurfTemp_grnd,
          surf_temp_C = (SurfTemp_veg + SurfTemp_grnd) / 2,
          surf_temp_C = ifelse(!is.na(surf_temp_C), surf_temp_C,
-                              ifelse(is.na(SurfTemp_veg), SurfTemp_grnd, SurfTemp_veg))) |>
+                              ifelse(is.na(SurfTemp_veg), SurfTemp_grnd, SurfTemp_veg)),
+         # logger used instead of average Totalize once every 10 s but value is in mm h-1
+         Ramount_Tot = Ramount_Tot / 6) |>
   select(series_start,
          time,
          day_of_year,
@@ -225,7 +232,7 @@ minute_2024_8_21.tb |>
          air_RH = RelHumidity,
          air_DP = AirDewPoint,
          air_pressure = AirPressure,
-         rain_mm_min = Ramount_Tot,
+         rain_mm_h = Ramount_Tot,
          surf_temp_C = surf_temp_C,
          surf_temp_sensor_delta_C = surf_temp_sensor_delta_C,
          was_sunny = sunny) -> minute_2024_8_21x.tb
@@ -250,6 +257,14 @@ original_time_range <- range(minute_2024_latest.tb$time)
 # may have duplicate records.
 rle.check <- rle(sort(as.numeric(minute_2024_latest.tb$time)))
 duplicates <- sum(rle.check$lengths > 1)
+which(rle.check$lengths > 1)
+duplicated <- as.POSIXct(rle.check$values[which(rle.check$lengths > 1)])
+minute_2024_latest.tb <-
+  minute_2024_latest.tb[minute_2024_latest.tb$time != duplicated, ]
+rle.check <- rle(sort(as.numeric(minute_2024_latest.tb$time)))
+duplicated <- as.POSIXct(rle.check$values[which(rle.check$lengths > 1)])
+duplicates <- length(duplicated)
+
 if (duplicates > 0L) {
   message("Found ", duplicates, " duplicated rows in data. Deleting them!!")
   minute_2024_latest.tb <- distinct(minute_2024_latest.tb, .keep_all = TRUE)
@@ -258,7 +273,7 @@ if (duplicates > 0L) {
 
 # validate
 stopifnot(all(original_time_range == range(minute_2024_latest.tb$time)))
-
+is.unsorted(minute_2024_latest.tb$time, strictly = TRUE)
 
 # add computed values -----------------------------------------------------
 
@@ -348,9 +363,6 @@ minute_2024_latest.tb |>
     air_vpd = ifelse(is.na(air_temp_C),
                      NA_real_,
                      water_vp_sat(air_temp_C) - air_vp),
-    rain_mm_min = ifelse(time < ymd_hms("2021-06-09 14:00:00"),
-                         NA_real_,
-                         rain_mm_min),
     .after = "was_sunny") |>
   mutate(# correct for temperature coefficient assuming sensors are at air temperature
     UVA_umol = UVA_umol * (1 + 0.0033 * (air_temp_C - 20)),
@@ -457,7 +469,7 @@ minute_2024_latest.tb |>
               across(PAR_umol_LI:air_pressure, mean_min_max),
               across(surf_temp_C:surf_temp_sensor_delta_C, mean_min_max),
               across(PAR_diff_fr_rel:air_vpd, mean_min_max),
-              rain_mm_h = mean(rain_mm_min), # something wrong with units!!
+              rain_mm_h = mean(rain_mm_h), # something wrong with units or huge variability!!
               was_sunny = (sum(was_sunny) / n()) >= 0.5,
               was_day = (sum(was_day) / n()) >= 0.5,
               n = n(),

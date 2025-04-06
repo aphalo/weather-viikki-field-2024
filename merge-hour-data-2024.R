@@ -6,7 +6,9 @@ library(photobiology)
 rm(list = ls(pattern = "*"))
 gc()
 
-# First batch with logger program TowerViikki-024-05-fast
+# File names are given based on the starting day of the data they contain!
+
+# First batch with logger program TowerViikki-2024-05-fast
 
 load("data-rda-partial/hour_2024_5_14.tb.rda")
 colnames(hour_2024_5_14.tb) <- gsub("_Avg$", "", colnames(hour_2024_5_14.tb))
@@ -40,13 +42,14 @@ hour_2024_5_14.tb |>
          BulkEC_20cm = median(BulkEC_20cm_1, BulkEC_20cm_2, BulkEC_20cm_3, na.rm = TRUE),
          BulkEC_30cm = median(BulkEC_30cm_1, BulkEC_30cm_2, BulkEC_30cm_3, na.rm = TRUE),
          BulkEC_40cm = median(BulkEC_40cm_1, BulkEC_40cm_2, BulkEC_40cm_3, na.rm = TRUE),
-         BulkEC_50cm = median(BulkEC_50cm_1, BulkEC_50cm_2, BulkEC_50cm_3, na.rm = TRUE)
+         BulkEC_50cm = median(BulkEC_50cm_1, BulkEC_50cm_2, BulkEC_50cm_3, na.rm = TRUE),
+         NAs.SoilV = sum(is.na(c(T_20cm_1, T_20cm_2, T_20cm_3)))
   ) |>
   rename(time = TIMESTAMP) |>
   ungroup() |>
   select(!Ka_5cm_1:BulkEC_50cm_3) -> hour_2024_5_14x.tb
 
-# Second batch with logger program TowerViikki-024-08-fast
+# Second batch with logger program TowerViikki-2024-08-fast
 # Changes only to millisecond table, but cause a memory card reset
 # affecting all tables
 
@@ -88,7 +91,7 @@ hour_2024_8_9.tb |>
   ungroup() |>
   select(!Ka_5cm_1:BulkEC_50cm_3) -> hour_2024_8_9x.tb
 
-# Third batch with logger program TowerViikki-024-08-fast
+# Third batch with logger program TowerViikki-2024-08-fast
 # Changes only to millisecond table, but cause a memory card reset
 # affecting all tables
 

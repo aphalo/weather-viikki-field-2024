@@ -193,6 +193,27 @@ soil_water_delta.fig
 soil_water_delta.fig
 ```
 
+## Soil water status, rainfall and reference evapotranspiration
+
+This is computed from the profile data down to 55 cm depth. Positive values indicate soil-water recharge and negative values water loss.
+
+```{r}
+day_2024_latest.tb |>
+  select(time, water_mm_0to55cm_delta, rain_mm_day, ET_ref_FAO56_mean, n_minutes) |>
+  filter(n_minutes > 1400) |>
+  na.omit() |>
+  ggplot(aes(time)) +
+  geom_hline(yintercept = 0, colour = "gray50", linewidth = 0.3) +
+  geom_line(aes(y = cumsum(water_mm_0to55cm_delta)), colour = "black") +
+  geom_line(aes(y = cumsum(rain_mm_day)), colour = "blue") +
+  geom_line(aes(y = cumsum(-ET_ref_FAO56_mean * 24)), colour = "orange") +
+  geom_line(aes(y = cumsum(water_mm_0to55cm_delta - rain_mm_day)), colour = "red") +
+  labs(y = expression("Accumulated water fluxes "*(mm)), x = "Time",
+       caption = "Blue = rain, Black = change in soil water content, Orange = reference ET.") -> 
+soil_water_delta.fig
+soil_water_delta.fig
+```
+
 ## Soil temperature at different depths
 
 ```{r}

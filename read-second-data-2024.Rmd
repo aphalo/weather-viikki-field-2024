@@ -53,6 +53,7 @@ We read the minute interval data for whole periods. When downloading data from t
 
 ```{r}
 second_raw.tb <- read_csi_dat(file = "data-latest/Viikki Tower_TableSecond.dat", locale = locale_UTC)
+# second_raw.tb <- read_csi_dat(file = "data-logged/data-2025-01-14/Viikki Tower_TableSecond.dat", locale = locale_UTC)
 
 head(second_raw.tb, 50)
 tail(second_raw.tb, 50)

@@ -1,0 +1,60 @@
+---
+  title: "Read data from Viikki field weather station"
+subtitle: "Minute-interval logging with Campbell Scientific CR6"
+author: "Pedro J. Aphalo"
+date: "`r Sys.Date()`"
+output: html_document
+---
+   
+Clean up workspace!
+  
+```{r}
+rm(list = ls(pattern = "*"))
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(tidy = FALSE, echo = TRUE)
+```
+
+```{r}
+library(readr)
+library(lubridate)
+library(photobiology)
+library(photobiologyInOut)
+library(dplyr)
+```
+
+We read the minute interval data for whole periods. When dowloading data from the logger we append it to the file. A new file is started when the data tables change. This happens when the CRBASIC program in the logger is editted in a way that changes the data that are logged.
+
+```{r}
+# latest
+# status.tb <- read_csi_dat(file = "data-latest/Viikki Tower_status.dat", locale = locale_UTC)
+
+status.tb <- read_csi_dat(file = "data-logged/data-2025-01-14/Viikki Tower_status.dat", locale = locale_UTC)
+
+status.tb
+nrow(status.tb)
+ncol(status.tb)
+
+range(status.tb$TIMESTAMP)
+```
+
+```{r}
+colnames(status.tb)
+```
+
+```{r}
+cat(comment(status.tb))
+```
+
+```{r}
+status.tb$Battery
+```
+
+
+```{r}
+status.tb$Low12VCount
+```
+```{r}
+status.tb$TIMESTAMP
+```

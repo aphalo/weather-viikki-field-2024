@@ -1,13 +1,13 @@
 'CR6 Series Datalogger + ADM116
-' WXT520 + SMP3 + LI190 + CS310 + sglux + BF5 + 107 + SKR110 + SoilView + CS650
+' WXT520 + SMP3 + LI190 + CS310 + sglux + BF5 + SKR110 + SoilView + CS650
 ' for OEB/SenPEP weather station in Viikki
 ' program author: Pedro J. Aphalo
 '
 'Revision history
-'2025
+'2015
 ' Neha's experiment 2015 Medicago truncatula
 '2020-05-06
-' Revised: 
+' Revised:
 ' Saving data to SD card
 ' Other revisions in 2020 and 2021
 '2022-08-21
@@ -54,6 +54,12 @@
 ' This seems to indicate that means from vary many observations are not
 ' supported. Change reading frequency for sensors known to be slow, and
 ' removed from TableMinute the averages available at 1 s.
+'2024-08-18
+' Add new fast sglux sensors and enable very fast reading
+'2025-02-19
+' Comment-out measurement of Campbell Sci 107 thermiestors as they have not
+' been connected since the fast sglux sensors were put in use.
+'
 'Declare Public Variables
 'Self monitoring:
 Public PTemp_C
@@ -132,9 +138,9 @@ Units Ramount=mm
 Units Hamount=hits/cm2
 Units SupplyVoltage=V
 Units ReferenceVoltage=V
-'107 Thermistors Temperature 
-Public T107_C(4)
-Units T107_C=Celsius
+'107 Thermistors Temperature
+' Public T107_C(4)
+' Units T107_C=Celsius
 'CS65 Soil water + temperature + conductivity
 'Declare Variables and Units
 Public CS65X_1(3)
@@ -338,11 +344,11 @@ Units SurfTemp_veg=Celsius
 
 'Declare Constants
 'Example:
-'CONST PI = 3.141592654	
+'CONST PI = 3.141592654
 
 'Define Data Tables.
 '
-'Fast sampling of irradiance during daytime 
+'Fast sampling of irradiance during daytime
 'Only sensors with short reponse time constants
 DataTable(TableMilliSecond,True,-1)
   DataInterval(0,50,mSec,0)
@@ -374,7 +380,7 @@ DataTable(TableSecond,True,-1)
 EndTable
 '
 'Minute summaries of weather and global radiation
-'All summaries in this table are needed as faster tables are called 
+'All summaries in this table are needed as faster tables are called
 'conditionally and this is the fastest one called non-conditionally
 DataTable(TableMinute,True,-1)
   DataInterval(0,1,Min,0)
@@ -480,7 +486,7 @@ DataTable(TableHour,True,-1)
 	Average(1,Ka_50cm_3,IEEE4,False)
 	Average(1,T_50cm_3,IEEE4,False)
 	Average(1,BulkEC_50cm_3,IEEE4,False)
-  Average (4,T107_C,IEEE4,False)
+'  Average (4,T107_C,IEEE4,False)
 ' Diagnostics
 ' Vaisala WXT
   Minimum(1,SupplyVoltage,IEEE4,False,False)
@@ -506,10 +512,10 @@ BeginProg
 	  'Main Scan (we set 1200 buffers = 2 min to see if we can avoid NAN values)
      Scan(50,mSec,2400,0)
     'LI190SB Quantum Sensor measurements PAR_Tot and PAR_Den, channel 1:
-    'Calibration is for LI-190 s/n xxxx  
+    'Calibration is for LI-190 s/n xxxx
 		CDM_VoltDiff(CDM_A116,1,PAR_Den,1,Autorange,1,True,0,7500,235.51,0)
     'CS-310 Quantum Sensor measurements PAR_Tot and PAR_Den, channel x:
-    'Calibration is for CS-319 s/n xxxx  
+    'Calibration is for CS-319 s/n xxxx
 		CDM_VoltDiff(CDM_A116,1,PAR_Den_CS,1,Autorange,4,True,0,7500,100,0)
     'BF5 Quantum Sensor measurements PAR_Tot and PAR_Den
     'The Multiplier and offset are valid for any BF5 instrument.
@@ -517,7 +523,7 @@ BeginProg
     CDM_VoltDiff(CDM_A116,1,PAR_BF_diff,1,Autorange,2,True,0,7500,1,0)
     'SKR110 raw millivolts
     CDM_VoltDiff(CDM_A116,1,Red_Den,1,Autorange,5,True,0,7500,-1,0)
-    CDM_VoltDiff(CDM_A116,1,Far_red_Den,1,Autorange,6,True,0,7500,-1,0)     
+    CDM_VoltDiff(CDM_A116,1,Far_red_Den,1,Autorange,6,True,0,7500,-1,0)
    'SKR110 calibrated
     CDM_VoltDiff(CDM_A116,1,Red_Den_cal,1,Autorange,5,True,0,7500,-2.972,0)
     CDM_VoltDiff(CDM_A116,1,Far_red_Den_cal,1,Autorange,6,True,0,7500,-2.483,0)
@@ -554,15 +560,15 @@ BeginProg
 	  CallTable(TableSecond)
     CallTable(TableMinute)
     CallTable(TableHour)
-	  NextScan	
+	  NextScan
 '
 ' Connditions in the soil change slowly, all soil sensors are here
 SlowSequence
-    'Measure the SoilVUE10 Complete Soil Profiler every 12 min = 5 times per hour
+    'Measure the SoilVUE10 Complete Soil Profiler every 15 min = 4 times per hour
     Scan(12,Min,0,0)
    		' 107 Temperature Probe (CSL) measurement 'T107_C' on CDM-A116 with CPI address 1
   		' 4 sensors single ended channels 20-23 (10-11 differential)
-  		CDM_Therm107(CDM_A116,1,T107_C,4,20,3,0,7500,1,0)
+  		' CDM_Therm107(CDM_A116,1,T107_C,4,20,3,0,7500,1,0)
 			'SoilVUE10 Complete Soil Profiler measurements 'VWC_5cm', 'Ka_5cm', 'T_5cm', and 'BulkEC_5cm'
 			SDI12Recorder(SoilVUE_5cm_1(),C3,0,"M1!",1,0,-1)
 			'SoilVUE10 Complete Soil Profiler measurements 'VWC_10cm', 'Ka_10cm', 'T_10cm', and 'BulkEC_10cm'
@@ -575,7 +581,7 @@ SlowSequence
 			SDI12Recorder(SoilVUE_40cm_1(),C3,0,"M5!",1,0,-1)
 			'SoilVUE10 Complete Soil Profiler measurements 'VWC_50cm', 'Ka_50cm', 'T_50cm', and 'BulkEC_50cm'
 			SDI12Recorder(SoilVUE_50cm_1(),C3,0,"M6!",1,0,-1)
-			
+
 			'SoilVUE10 Complete Soil Profiler measurements 'VWC_5cm_2', 'Ka_5cm_2', 'T_5cm_2', and 'BulkEC_5cm_2'
 			SDI12Recorder(SoilVUE_5cm_2(),C3,1,"M1!",1,0,-1)
 			'SoilVUE10 Complete Soil Profiler measurements 'VWC_10cm_2', 'Ka_10cm_2', 'T_10cm_2', and 'BulkEC_10cm_2'
@@ -588,7 +594,7 @@ SlowSequence
 			SDI12Recorder(SoilVUE_40cm_2(),C3,1,"M5!",1,0,-1)
 			'SoilVUE10 Complete Soil Profiler measurements 'VWC_50cm_2', 'Ka_50cm_2', 'T_50cm_2', and 'BulkEC_50cm_2'
 			SDI12Recorder(SoilVUE_50cm_2(),C3,1,"M6!",1,0,-1)
-			
+
 			'SoilVUE10 Complete Soil Profiler measurements 'VWC_5cm_3', 'Ka_5cm_3', 'T_5cm_3', and 'BulkEC_5cm_3'
 			SDI12Recorder(SoilVUE_5cm_3(),C3,2,"M1!",1,0,-1)
 			'SoilVUE10 Complete Soil Profiler measurements 'VWC_10cm_3', 'Ka_10cm_3', 'T_10cm_3', and 'BulkEC_10cm_3'
@@ -601,7 +607,7 @@ SlowSequence
 			SDI12Recorder(SoilVUE_40cm_3(),C3,2,"M5!",1,0,-1)
 			'SoilVUE10 Complete Soil Profiler measurements 'VWC_50cm_3', 'Ka_50cm_3', 'T_50cm_3', and 'BulkEC_50cm_3'
 			SDI12Recorder(SoilVUE_50cm_3(),C3,2,"M6!",1,0,-1)
-			
+
   		'CS650/655 Water Content Reflectometer measurements 'VWC', 'EC', and 'T'
 			SDI12Recorder(CS65X_1(),U1,"1","M!",1,0,-1)
 			SDI12Recorder(CS65X_2(),U1,"2","M!",1,0,-1)

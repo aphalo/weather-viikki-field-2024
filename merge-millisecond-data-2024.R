@@ -135,13 +135,12 @@ millisecond_2024_8_21.tb |>
          UVA2f_umol,
          UVBf_umol,
          UVA1fc_umol,
-         UVA2fc_umol) -> millisecond_2024_8_21x.tb
+         UVA2fc_umol,
+         f_in_the_open,
+         f_in_canopy,
+         f_unknown) -> millisecond_2024_8_21x.tb
 
 # bind data, here the columns differ so binding adds NAs
-
-# bind_rows(minute_2015_8x.tb, minute_2016_8x.tb, minute_2017_6x.tb,
-#           minute_2019_4x.tb, minute_2020_5x.tb, minute_2020_11x.tb,
-#           minute_2021_6x.tb) -> minute_2015_latest.tb
 
 bind_rows(millisecond_2024_5_14x.tb,
           millisecond_2024_8_9x.tb,
@@ -228,22 +227,24 @@ if (duplicates > 0L) {
 
 millisecond_2024_latest.tb |>
   rename(PAR_umol = PAR_umol_CS) |>
-  mutate(bluef_greenf = ifelse(PAR_umol > 0.1, bluef_sellaro_umol / greenf_sellaro_umol, NA_real_),
+  mutate(bluef_greenf = ifelse(PAR_umol > 0.1 & f_in_the_open,
+                               bluef_sellaro_umol / greenf_sellaro_umol, NA_real_),
          bluef_greenf_sq = bluef_greenf * wl_expanse(Green("Sellaro")) / wl_expanse(Blue("Sellaro")),
-         UVAf_PAR = ifelse(PAR_umol > 0.1, UVAf_umol / PAR_umol, NA_real_),
+         UVAf_PAR = ifelse(PAR_umol > 0.1 & f_in_the_open, UVAf_umol / PAR_umol, NA_real_),
          UVAf_PAR_sq = UVAf_PAR * wl_expanse(PAR()) / wl_expanse(UVA()),
-         UVA1f_PAR = ifelse(PAR_umol > 0.1, UVA1f_umol / PAR_umol, NA_real_),
+         UVA1f_PAR = ifelse(PAR_umol > 0.1 & f_in_the_open, UVA1f_umol / PAR_umol, NA_real_),
          UVA1f_PAR_sq = UVA1f_PAR * wl_expanse(PAR()) / wl_expanse(UVA1()),
-         UVA2f_PAR = ifelse(PAR_umol > 0.1, UVAf_umol / PAR_umol, NA_real_),
+         UVA2f_PAR = ifelse(PAR_umol > 0.1 & f_in_the_open, UVAf_umol / PAR_umol, NA_real_),
          UVA2f_PAR_sq = UVA2f_PAR * wl_expanse(PAR()) / wl_expanse(UVA2()),
-         UVBf_PAR = ifelse(PAR_umol > 0.1, UVBf_umol / PAR_umol, NA_real_),
+         UVBf_PAR = ifelse(PAR_umol > 0.1 & f_in_the_open, UVBf_umol / PAR_umol, NA_real_),
          UVBf_PAR_sq = UVBf_PAR * wl_expanse(PAR()) / wl_expanse(UVB()),
-         .after = "UVA2fc_umol") |>
+         .after = "UVA2fc_umol")|>
   mutate(delta_time = c(NA, diff(time)),
-         start_of_run = delta_time > seconds(60)) -> millisecond_2024_latest.tb
+         start_of_slice = delta_time > seconds(60)) -> millisecond_2024_latest.tb
 
 gc()
 
+# time range, rows, cols
 range(millisecond_2024_latest.tb$time)
 nrow(millisecond_2024_latest.tb)
 ncol(millisecond_2024_latest.tb)
@@ -292,6 +293,7 @@ millisecond_2024_latest.tb |>
             across(day_of_year:calendar_year, first, .names = "{.col}"),
             across(time_of_day_utc:sun_azimuth, median, .names = "{.col}"),
             across(PAR_umol:UVBf_PAR_sq, mean_min_max),
+            across(f_in_the_open:f_unknown, all, .names = "{.col}"),
             n = n(),
             incomplete.data = n < 20,
             bad.data = n < 15) |>

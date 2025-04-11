@@ -107,6 +107,20 @@ if (duplicates > 0L) {
 }
 ```
 
+
+```{r}
+# Handle also old "slow" logger program
+if (! all(c("UVBf_Den", "UVAf_Den", "UVA1f_Den", "Bluef_Den", "Greenf_Den") %in%
+          colnames(millisecond_raw.tb))) {
+  millisecond_raw.tb |>
+    mutate(UVBf_Den = NA_real_,
+           UVAf_Den = NA_real_,
+           UVA1f_Den = NA_real_,
+           Bluef_Den = NA_real_,
+           Greenf_Den = NA_real_) -> millisecond_raw.tb
+}
+```
+
 To force TZ with 'lubridate' we would need to be sure that daylight saving times have been automatically set. This is not the case so we need first to subtract 2 h from UTC + 2h time, to convert to true UTC and then do calculations based on this. We re-express all times in UTC year round.
 
 ```{r}
@@ -126,7 +140,7 @@ b. Compute solar time and sun elevation and azimuth.
 FALSE) or not (sunny = TRUE).
 
 ```{r}
-  # NEW CR6 program
+# NEW CR6 program with fast sglux sensors
 millisecond_raw.tb |>
   select(-RECORD) |>
   filter(!is.na(TIMESTAMP)) |>
@@ -177,8 +191,11 @@ millisecond.tb |>
 millisecond.tb |>
   summarise(across(PAR_Den_CS:sun_azimuth, function(x) {sum(is.na(x))},  .names = "{.col}_cls")) |>
   t() |> max()
-  
-millisecond.tb |> na.omit() -> millisecond.tb
+
+sum(is.na(millisecond.tb$PAR_Den_CS))
+
+millisecond.tb |>
+  filter(!is.na(PAR_Den_CS)) -> millisecond.tb
 
 millisecond.tb |>
   reframe(across(PAR_Den_CS:month_of_year, range, .names = "{.col}"),
@@ -197,7 +214,6 @@ millisecond.tb |>
  In 2024, the fast sglux sensors were at times inside the faba beans canopy and part of the time in the open as reference. We add this information to the data frame.
  
 ```{r}
-
 millisecond.tb |>
     mutate(f_in_the_open = (time > ymd_hm("2024-08-20 13:32") & time < ymd_hm("2024-08-20 14:15")) |
            (time > ymd_hm("2024-08-25 11:10") & time < ymd_hm("2024-08-20 11:24")) |

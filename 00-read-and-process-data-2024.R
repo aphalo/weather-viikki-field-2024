@@ -31,7 +31,16 @@
 
 library(knitr)
 
+merge_only <- TRUE  # merge files already in ./data-rda-partial
+# merge_only <- FALSE # read latest from ./data-logged before merging
+
 # knit scripts if needed
+
+if (!file.exists("read-millisecond-data-2024.R") ||
+    file.mtime("read-millisecond-data-2024.Rmd") >
+    file.mtime("read-millisecond-data-2024.R")) {
+  purl("read-millisecond-data-2024.Rmd")
+}
 
 if (!file.exists("read-second-data-2024.R") ||
     file.mtime("read-second-data-2024.Rmd") >
@@ -55,7 +64,8 @@ if (!file.exists("read-hour-data-2024.R") ||
 
 input_scripts <- list.files(".", pattern = "\\.R$")
 required_scripts <-
-  c("read-second-data-2024.R", "merge-second-data-2024.R",
+  c("read-millisecond-data-2024.R", "merge-millisecond-data-2024.R",
+    "read-second-data-2024.R", "merge-second-data-2024.R",
     "read-minute-data-2024.R", "merge-minute-data-2024.R",
     "read-hour-data-2024.R", "merge-hour-data-2024.R")
 
@@ -68,6 +78,11 @@ if (!all(required_scripts %in% input_scripts)) {
 
 # check that folders exist and create them if missing
 
+if (!dir.exists("./data-rda-partial")) {
+  message("Creating folder './data-rda-partial'")
+  dir.create("./data-rda-partial")
+}
+
 if (!dir.exists("./data-rda")) {
   message("Creating folder './data-rda'")
   dir.create("./data-rda")
@@ -76,6 +91,11 @@ if (!dir.exists("./data-rda")) {
 if (!dir.exists("./data-latest")) {
   message("Creating folder './data-latest'")
   dir.create("./data-latest")
+}
+
+if (!dir.exists("./data-osf")) {
+  message("Creating folder './data-osf'")
+  dir.create("./data-osf")
 }
 
 # check for missing data files
@@ -101,22 +121,35 @@ if (!all(required_files %in% input_files)) {
   # message("Processing 1/2 second frequency data")
   # source("merge-second-data-2024.R")
 
+if (!merge_only) {
+  message("Reading 50 ms frequency data")
+  source("read-millisecond-data-2024.R")
+}
+message("Processing 50 ms frequency data")
+source("merge-millisecond-data-2024.R")
 
-message("Reading 1/2 second frequency data")
-source("read-second-data-2024.R")
-message("Processing 1/2 second frequency data")
+if (!merge_only) {
+  message("Reading 500 ms frequency data")
+  source("read-second-data-2024.R")
+}
+message("Processing 500 ms frequency data")
 source("merge-second-data-2024.R")
 
-message("Reading 1 minute frequency data")
-source("read-minute-data-2024.R")
+if (!merge_only) {
+  message("Reading 1 minute frequency data")
+  source("read-minute-data-2024.R")
+}
 message("Processing 1 minute frequency data")
 source("merge-minute-data-2024.R")
 
-message("Reading 1 hour frequency data")
-source("read-hour-data-2024.R")
+if (!merge_only) {
+  message("Reading 1 hour frequency data")
+  source("read-hour-data-2024.R")
+}
 message("Processing 1 hour frequency data")
 source("merge-hour-data-2024.R")
 
+# the input values are computed from 1 hour frequency ones!
 message("Processing 1 day frequency data")
 source("merge-day-data-2024.R")
 
